@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Toll Plaza Preview</title>
+<style>
+  :root { --bg: #a9c2d6; --panel: rgba(20, 24, 30, 0.78); --text: #eef1f4; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); font: 13px system-ui, sans-serif; }
+  #hud { position: fixed; top: 12px; left: 12px; background: var(--panel); color: var(--text);
+         padding: 10px 12px; border-radius: 8px; max-width: calc(100vw - 48px); }
+  #hud b { font-size: 14px; }
+  #hud .row { margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap; }
+  button { background: #3a4452; color: var(--text); border: 0; border-radius: 5px; padding: 5px 9px; cursor: pointer; }
+  button:hover { background: #4d5a6c; }
+  button.active { background: #2f6fd0; }
+  .lane { display: inline-flex; border-radius: 5px; overflow: hidden; }
+  .lane button { border-radius: 0; padding: 5px 7px; }
+  .lane .type.etc { background: #5c338c; }
+  .lane .type.cash { background: #006b38; }
+  .lane .close.on { background: #c0261c; }
+  .lane.closed .type { opacity: .55; }
+  #meta { opacity: 0.7; margin-top: 6px; font-size: 11px; }
+</style>
+</head>
+<body>
+<div id="hud">
+  <b>Toll Plaza preview</b>
+  <div class="row" id="sizes"></div>
+  <div class="row" id="lanes"></div>
+  <div id="laneHelp" style="opacity:.7;font-size:11px;margin-top:4px">Lanes left to right: click a lane to switch electronic / cash, ✕ to close it</div>
+  <div class="row">
+    <button data-view="approach">Driver approach</button>
+    <button data-view="aerial">Aerial</button>
+    <button data-view="side">Side</button>
+    <button data-view="game">Game camera</button>
+    <button data-view="signs">Signs close-up</button>
+    <button data-view="entrance">Lane entrance</button>
+    <button data-view="cash">Cash lane gate</button>
+  </div>
+  <div id="meta">Drag to orbit · right-drag to pan · scroll to zoom · generated /*GENERATED_AT*/</div>
+</div>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const PLAZAS = /*PLAZA_DATA*/[];
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xa9c2d6);
+scene.fog = new THREE.Fog(0xa9c2d6, 300, 900);
+
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.5, 1500);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.maxPolarAngle = Math.PI * 0.495;
+
+scene.add(new THREE.HemisphereLight(0xdfeaff, 0x55624a, 0.9));
+const sun = new THREE.DirectionalLight(0xfff2dd, 2.2);
+sun.position.set(-40, 60, 30);
+sun.castShadow = true;
+sun.shadow.mapSize.set(4096, 4096);
+Object.assign(sun.shadow.camera, { left: -90, right: 90, top: 90, bottom: -90, near: 1, far: 250 });
+sun.shadow.bias = -0.0005;
+scene.add(sun);
+
+// Static context: grass.
+const grass = new THREE.Mesh(new THREE.PlaneGeometry(800, 800), new THREE.MeshStandardMaterial({ color: 0x6f7d4a, roughness: 1 }));
+grass.rotation.x = -Math.PI / 2;
+grass.position.y = -0.02;
+grass.receiveShadow = true;
+scene.add(grass);
+
+// Per-plaza group: the plaza parts (one mesh per paint, exactly as the mod builds them), road, car.
+let plazaGroup = null;
+function showPlaza(plaza) {
+  if (plazaGroup) {
+    scene.remove(plazaGroup);
+    plazaGroup.traverse(o => { if (o.isMesh) { o.geometry.dispose(); o.material.dispose(); } });
+  }
+  plazaGroup = new THREE.Group();
+  for (const p of plaza.parts) plazaGroup.add(buildPart(p));
+
+  // Lane signs: one group per lane, rebuilt from the pre-generated variant when the lane changes.
+  const laneBar = document.getElementById('lanes');
+  laneBar.innerHTML = '';
+  plaza.lanes.forEach((lane, i) => {
+    const state = { cash: lane.cash, closed: false, group: null };
+    const chip = document.createElement('span');
+    chip.className = 'lane';
+    const typeBtn = document.createElement('button');
+    const closeBtn = document.createElement('button');
+    typeBtn.className = 'type';
+    closeBtn.className = 'close';
+    closeBtn.textContent = '✕';
+    chip.append(typeBtn, closeBtn);
+    laneBar.appendChild(chip);
+
+    const apply = () => {
+      if (state.group) {
+        plazaGroup.remove(state.group);
+        state.group.traverse(o => { if (o.isMesh) { o.geometry.dispose(); o.material.dispose(); } });
+      }
+      state.group = new THREE.Group();
+      const key = (state.cash ? 'cash' : 'etc') + (state.closed ? '_closed' : '_open');
+      for (const p of lane.variants[key]) state.group.add(buildPart(p));
+      plazaGroup.add(state.group);
+      typeBtn.textContent = `${i + 1} ${state.cash ? 'Cash' : 'E-Toll'}`;
+      typeBtn.classList.toggle('cash', state.cash);
+      typeBtn.classList.toggle('etc', !state.cash);
+      closeBtn.classList.toggle('on', state.closed);
+      chip.classList.toggle('closed', state.closed);
+    };
+    typeBtn.addEventListener('click', () => { state.cash = !state.cash; apply(); });
+    closeBtn.addEventListener('click', () => { state.closed = !state.closed; apply(); });
+    apply();
+  });
+
+  // The plaza's own road (the in-game sub-nets): one straight one-way highway per road group, drawn
+  // with dashed lane lines, extended past both ends for context.
+  const asphalt = new THREE.MeshStandardMaterial({ color: 0x4a4b4e, roughness: 0.95 });
+  const paint = new THREE.MeshStandardMaterial({ color: 0xe8e8e2, roughness: 0.8 });
+  for (const [x, zStart, zEnd, lanes] of plaza.roads) {
+    const z0 = zEnd - 60, z1 = zStart + 150, width = lanes * plaza.laneWidth + 3;
+    const road = new THREE.Mesh(new THREE.PlaneGeometry(width, z1 - z0), asphalt);
+    road.rotation.x = -Math.PI / 2;
+    road.position.set(x, -0.01, (z0 + z1) / 2);
+    road.receiveShadow = true;
+    plazaGroup.add(road);
+    const laneLeft = x - (lanes * plaza.laneWidth) / 2;
+    for (let i = 0; i <= lanes; i++) {
+      const lx = laneLeft + i * plaza.laneWidth, edge = i === 0 || i === lanes;
+      for (let z = z0; z < z1; z += edge ? 1000 : 9) {
+        const len = edge ? z1 - z0 : 3;
+        const dash = new THREE.Mesh(new THREE.PlaneGeometry(0.15, len), paint);
+        dash.rotation.x = -Math.PI / 2;
+        dash.position.set(lx, 0, z + len / 2);
+        plazaGroup.add(dash);
+      }
+    }
+  }
+
+  const car = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.45, 4.6), new THREE.MeshStandardMaterial({ color: 0xb02a2a, roughness: 0.4 }));
+  car.position.set(plaza.laneXs[0], 0.73, 30);
+  car.castShadow = true;
+  plazaGroup.add(car);
+
+  scene.add(plazaGroup);
+  document.querySelectorAll('#sizes button').forEach(b => b.classList.toggle('active', b.dataset.id === plaza.id));
+}
+
+// Same baked textures the mod ships, embedded as data URIs so the page is a single self-contained file.
+const TEXTURES = /*TEXTURE_DATA*/{};
+const loader = new THREE.TextureLoader();
+const texCache = new Map();
+function tex(key, isColor) {
+  if (!key) return null;
+  if (!texCache.has(key)) {
+    const t = loader.load(TEXTURES[key] || `textures/${key}.png`);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.anisotropy = 8;
+    if (isColor) t.colorSpace = THREE.SRGBColorSpace;
+    texCache.set(key, t);
+  }
+  return texCache.get(key);
+}
+
+// Flat strip of the given width along a cubic Bézier (12 floats: a, b, c, d).
+function ribbon(s, width, material, y) {
+  const P = i => new THREE.Vector3(s[i * 3], s[i * 3 + 1], s[i * 3 + 2]);
+  const curve = new THREE.CubicBezierCurve3(P(0), P(1), P(2), P(3));
+  const n = 24, pos = [], idx = [];
+  for (let i = 0; i <= n; i++) {
+    const t = i / n, p = curve.getPoint(t), d = curve.getTangent(t);
+    const side = new THREE.Vector3(-d.z, 0, d.x).normalize().multiplyScalar(width / 2);
+    pos.push(p.x - side.x, y, p.z - side.z, p.x + side.x, y, p.z + side.z);
+    if (i < n) { const k = i * 2; idx.push(k, k + 2, k + 1, k + 1, k + 2, k + 3); }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  const m = new THREE.Mesh(g, material);
+  m.material.side = THREE.DoubleSide;
+  m.receiveShadow = true;
+  return m;
+}
+
+function buildPart(p) {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(p.pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(p.nrm, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(p.uv, 2));
+  g.setIndex(p.idx);
+  const isGlass = p.name === 'Glass';
+  const isLight = p.name === 'LaneLight' || p.name === 'LaneLightRed';
+  const color = new THREE.Color().setRGB(p.color[0], p.color[1], p.color[2], THREE.SRGBColorSpace);
+  const m = new THREE.MeshStandardMaterial({
+    color: 0xffffff, // the color is baked into the texture, as in game
+    map: tex(p.tex, true),
+    normalMap: tex(p.normalTex, false),
+    roughness: isGlass ? 0.1 : 0.75,
+    metalness: isGlass ? 0.3 : 0.05,
+    emissive: isLight ? color : new THREE.Color(0x000000),
+    emissiveIntensity: isLight ? 0.8 : 0,
+  });
+  const mesh = new THREE.Mesh(g, m);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  mesh.name = p.name;
+  return mesh;
+}
+
+const sizes = document.getElementById('sizes');
+for (const plaza of PLAZAS) {
+  const b = document.createElement('button');
+  b.textContent = plaza.title.replace('Toll Plaza ', '');
+  b.dataset.id = plaza.id;
+  b.addEventListener('click', () => showPlaza(plaza));
+  sizes.appendChild(b);
+}
+showPlaza(PLAZAS.find(p => p.id === 'TollPlaza_Plaza8') || PLAZAS[0]);
+
+const views = {
+  approach: [[-4, 2.2, 70], [0, 4, 0]],
+  aerial: [[0, 230, 0.1], [0, 0, 0]],
+  side: [[60, 12, 0], [0, 3, 0]],
+  game: [[-45, 55, 60], [0, 0, 0]],
+  signs: [[-4, 5, 18], [-4, 6.2, 6]],
+  entrance: [[-9, 2.2, 24], [-6.5, 1.2, 10]],
+  cash: [[6, 2.6, 4], [10, 1.6, -12]],
+};
+function setView(name) {
+  const [pos, target] = views[name];
+  camera.position.set(...pos);
+  controls.target.set(...target);
+  controls.update();
+}
+document.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => setView(b.dataset.view)));
+setView('game');
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
+</script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+<Publish>
+	<ModId Value="" />
+	<DisplayName Value="Toll Plaza" />
+	<ShortDescription Value="American-style highway toll plazas: booths, canopy and slowing traffic that pays a toll." />
+	<LongDescription>Toll Plaza adds a highway toll plaza with booth lanes and an overhead canopy. Vehicles slow down to pay a toll that goes to the city treasury.</LongDescription>
+	<Thumbnail Value="" />
+	<Screenshot Value="" />
+	<Tag Value="Code Mod" />
+	<ModVersion Value="0.1.0" />
+	<GameVersion Value="1.*" />
+	<Dependency Id="" />
+	<ChangeLog Value="Work in progress." />
+</Publish>

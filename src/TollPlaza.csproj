@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <Configurations>Debug;Release</Configurations>
+    <AssemblyName>TollPlaza</AssemblyName>
+    <RootNamespace>TollPlaza</RootNamespace>
+    <Version>0.1.0</Version>
+    <LangVersion>9.0</LangVersion>
+    <PublishConfigurationPath>Properties\PublishConfiguration.xml</PublishConfigurationPath>
+  </PropertyGroup>
+
+  <!-- Build properties/targets installed by the official CS2 modding toolchain (Options > Modding in the game). -->
+  <Import Project="$([System.Environment]::GetEnvironmentVariable('CSII_TOOLPATH', 'EnvironmentVariableTarget.User'))\Mod.props" />
+  <Import Project="$([System.Environment]::GetEnvironmentVariable('CSII_TOOLPATH', 'EnvironmentVariableTarget.User'))\Mod.targets" />
+
+  <ItemGroup>
+    <Reference Include="Game"><Private>false</Private></Reference>
+    <Reference Include="Colossal.Core"><Private>false</Private></Reference>
+    <Reference Include="Colossal.Logging"><Private>false</Private></Reference>
+    <Reference Include="Colossal.IO.AssetDatabase"><Private>false</Private></Reference>
+    <Reference Include="Colossal.AssetPipeline"><Private>false</Private></Reference>
+    <Reference Include="Colossal.Localization"><Private>false</Private></Reference>
+    <Reference Include="Colossal.UI"><Private>false</Private></Reference>
+    <Reference Include="Colossal.UI.Binding"><Private>false</Private></Reference>
+    <Reference Include="Colossal.Mathematics"><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.CoreModule"><Private>false</Private></Reference>
+    <Reference Include="Unity.Entities"><Private>false</Private></Reference>
+    <Reference Include="Unity.Collections"><Private>false</Private></Reference>
+    <Reference Include="Unity.Mathematics"><Private>false</Private></Reference>
+    <Reference Include="Unity.Burst"><Private>false</Private></Reference>
+  </ItemGroup>
+
+  <!-- Baked by tools/PreviewExport; shipped next to the DLL and imported at runtime by TextureLibrary. -->
+  <ItemGroup>
+    <None Include="Textures\*.png" CopyToOutputDirectory="PreserveNewest" />
+    <!-- In-game control panel, built by ui/ (npm run build) into UIBuild. -->
+    <None Include="UIBuild\**\*" Link="%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Update="System"><Private>false</Private></Reference>
+    <Reference Update="System.Core"><Private>false</Private></Reference>
+    <Reference Update="System.Data"><Private>false</Private></Reference>
+  </ItemGroup>
+
+</Project>

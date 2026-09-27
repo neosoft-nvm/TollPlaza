@@ -1,0 +1,62 @@
+.panel {
+    position: absolute;
+    top: 80rem;
+    left: 60rem;
+    width: 380rem;
+    pointer-events: auto;
+}
+
+.section {
+    padding: 8rem 12rem;
+    border-bottom: 1rem solid rgba(255, 255, 255, 0.08);
+
+    &:last-child {
+        border-bottom: none;
+    }
+}
+
+.heading {
+    font-size: 12rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1rem;
+    opacity: 0.6;
+    margin-bottom: 6rem;
+}
+
+.row {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    padding: 3rem 0;
+    font-size: 14rem;
+}
+
+.label {
+    opacity: 0.85;
+}
+
+.value {
+    font-weight: 700;
+}
+
+.stepper {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+}
+
+.step {
+    width: 28rem;
+    height: 28rem;
+    font-size: 18rem;
+    padding: 0;
+    justify-content: center;
+}
+
+.rate {
+    width: 70rem;
+    text-align: center;
+    font-weight: 700;
+}

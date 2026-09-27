@@ -1,0 +1,27 @@
+bin/
+obj/
+.vs/
+*.user
+Library/
+Logs/
+
+node_modules/
+src/UIBuild/
+
+
+# Copied source from other mods, kept locally for reference only (licenses not checked)
+docs/reference/
+
+# Texture source downloads: keep only the files the baker reads
+textures/src/**/*.blend
+textures/src/**/*.usdc
+textures/src/**/*.tres
+textures/src/**/*.mtlx
+textures/src/**/*Displacement*
+textures/src/**/*NormalDX*
+textures/src/**/*Roughness*
+textures/src/**/*Metalness*
+textures/src/**/*Opacity*
+
+# Generated preview textures (embedded in plaza.html)
+preview/textures/
