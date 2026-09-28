@@ -120,6 +120,7 @@ namespace TollPlaza
             public VehicleClass Class;
             public int Cents;
             public bool Charged;
+            public bool GateOpened;
             // Braking probe
             public float SpeedAt;
             public int SpeedTick;
@@ -248,6 +249,10 @@ namespace TollPlaza
                                 booth.Record(m_SimulationSystem.frameIndex);
                             }
                         }
+                        if (!pass.GateOpened && (at.boothLane || at.pastBooths))
+                        {
+                            OpenGateAhead(vehicles[j], at.plaza, ref pass);
+                        }
                         MeasureBraking(vehicles[j], at.plaza, ref pass);
                         pass.LastSeen = m_Tick;
                         m_Passes[key] = pass;
@@ -364,6 +369,57 @@ namespace TollPlaza
                 pass.SpeedTick = m_Tick;
             }
         }
+
+        /// <summary>
+        /// Opens the lane's exit gate (arm up, signal green) just in time for the vehicle to reach it: when it's
+        /// about the arm's raise time away at its current speed, or closer than GateOpenMinMeters. The lane is the
+        /// one the vehicle is actually in at that point (by its position), not the lane piece it's on.
+        /// </summary>
+        private void OpenGateAhead(Entity vehicle, Entity plaza, ref Pass pass)
+        {
+            PlazaLayout layout = LayoutOf(plaza);
+            if (layout == null || !EntityManager.HasComponent<Game.Objects.Transform>(vehicle)
+                || !EntityManager.HasComponent<Game.Objects.Transform>(plaza))
+            {
+                return;
+            }
+            Game.Objects.Transform t = EntityManager.GetComponentData<Game.Objects.Transform>(plaza);
+            quaternion toLocal = math.inverse(t.m_Rotation);
+            float3 local = math.mul(toLocal, EntityManager.GetComponentData<Game.Objects.Transform>(vehicle).m_Position - t.m_Position);
+            float toGate = layout.GateZ - local.z;
+            if (toGate > GateOpenMaxMeters || local.z < layout.IslandStartZ)
+            {
+                return;
+            }
+            float speed = EntityManager.HasComponent<Game.Objects.Moving>(vehicle)
+                ? math.max(0f, math.mul(toLocal, EntityManager.GetComponentData<Game.Objects.Moving>(vehicle).m_Velocity).z)
+                : 0f;
+            // The front of the car is ahead of its position; the lead covers the arm's raise and the update gap.
+            float lead = speed * (LaneGate.RaiseSeconds + UpdateInterval / SimFramesPerSecond) + GateOpenMinMeters;
+            if (toGate > lead)
+            {
+                return;
+            }
+            if (toGate < -3f)
+            {
+                pass.GateOpened = true; // first seen already through the gate (the plaza was placed around it)
+                return;
+            }
+            int lane = 0;
+            for (int i = 1; i < layout.LaneCount; i++)
+            {
+                if (math.abs(layout.LaneCenterX(i) - local.x) < math.abs(layout.LaneCenterX(lane) - local.x))
+                {
+                    lane = i;
+                }
+            }
+            PlazaStats.Of(plaza).Booth(lane).Gate.Open(m_SimulationSystem.frameIndex);
+            pass.GateOpened = true;
+        }
+
+        // A vehicle's gate opens within this distance of it at the most (a fast car), and at least this close.
+        private const float GateOpenMaxMeters = 40f;
+        private const float GateOpenMinMeters = 4f;
 
         private void LogStop(Entity vehicle, Entity plaza, Game.Objects.Transform transform, float before, float after, bool reversing)
         {

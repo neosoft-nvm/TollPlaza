@@ -68,7 +68,10 @@ namespace TollPlaza
         // The frames of the vehicles charged in the last minute (not saved).
         private readonly Queue<uint> m_Recent = new Queue<uint>();
 
-        /// <summary>Frame of the last vehicle charged (not saved), or null; a booth's gate light shows green after it.</summary>
+        /// <summary>A booth lane's exit gate and signal (not saved).</summary>
+        public LaneGate Gate { get; } = new LaneGate();
+
+        /// <summary>Frame of the last vehicle charged (not saved), or null.</summary>
         public uint? LastFrame { get; private set; }
 
         public void Record(uint frame)

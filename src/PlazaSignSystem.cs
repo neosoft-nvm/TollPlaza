@@ -45,13 +45,20 @@ namespace TollPlaza
             public Piece(Mesh mesh, Material material) { Mesh = mesh; Material = material; }
         }
 
-        private readonly List<(Matrix4x4 matrix, List<Piece> pieces)> m_Draw = new List<(Matrix4x4, List<Piece>)>();
+        /// <summary>A lane's gate: its signal (red or green pieces) and arm, both set every frame from its state.</summary>
+        private sealed class Gate
+        {
+            public LaneGate State;
+            public List<Piece> Red, Green;
+            public Piece? Arm;
+            public Vector3 Hinge;
+        }
+
+        private readonly List<(Matrix4x4 matrix, List<Piece> pieces, List<Gate> gates)> m_Draw = new List<(Matrix4x4, List<Piece>, List<Gate>)>();
         private readonly Dictionary<string, Material> m_Materials = new Dictionary<string, Material>();
         private readonly HashSet<string> m_UsedMaterials = new HashSet<string>();
         private readonly Dictionary<string, Mesh> m_Meshes = new Dictionary<string, Mesh>();
         private readonly Dictionary<PlazaLayout, int> m_LayoutIds = new Dictionary<PlazaLayout, int>();
-        // How long a cash lane's gate light stays green after the booth charges a vehicle (4 s at normal speed).
-        private const uint GreenFrames = 240;
 
         private PrefabSystem m_PrefabSystem;
         private Game.Simulation.SimulationSystem m_SimulationSystem;
@@ -115,7 +122,8 @@ namespace TollPlaza
                     continue;
                 }
                 Transform transform = EntityManager.GetComponentData<Transform>(plaza);
-                m_Draw.Add((Matrix4x4.TRS(transform.m_Position, transform.m_Rotation, Vector3.one), PiecesFor(plaza, layout)));
+                var gates = new List<Gate>();
+                m_Draw.Add((Matrix4x4.TRS(transform.m_Position, transform.m_Rotation, Vector3.one), PiecesFor(plaza, layout, gates), gates));
             }
 
             // Artwork no plaza shows any more (renamed, bulldozed, rates or speeds changed): free it.
@@ -125,7 +133,7 @@ namespace TollPlaza
             }
         }
 
-        private List<Piece> PiecesFor(Entity plaza, PlazaLayout layout)
+        private List<Piece> PiecesFor(Entity plaza, PlazaLayout layout, List<Gate> gates)
         {
             int id = LayoutId(layout);
             var pieces = new List<Piece>();
@@ -159,9 +167,15 @@ namespace TollPlaza
 
                 // The working plaza's model has no exit gates (PlazaLayout.Build): every lane that takes cash gets
                 // one here, so switching a lane to E-Toll removes its gate and switching it to cash adds one.
-                // Every lane gets a signal (red until its booth charges a vehicle, then green for a moment);
-                // cash lanes also get the gate cabinet and arm.
-                pieces.AddRange(GatePieces(layout, id, lane, isCash, green: JustPaid(plaza, lane)));
+                // Every lane gets a signal (green while a vehicle goes through, see LaneGate); cash lanes also
+                // get the gate cabinet and an arm that swings up for each vehicle.
+                if (isCash)
+                {
+                    var cabinet = new PlazaMeshBuilder();
+                    layout.BuildGateCabinet(cabinet, lane);
+                    pieces.AddRange(PiecesOf(cabinet, $"cabinet|{id}|{lane}"));
+                }
+                gates.Add(GateFor(plaza, layout, id, lane, isCash));
             }
 
             int car = TollState.CarRateCents, truck = TollState.TruckRateCents, bus = TollState.BusRateCents;
@@ -197,31 +211,38 @@ namespace TollPlaza
             return "CASH AND E-TOLL LANES AS SIGNED";
         }
 
-        /// <summary>True for a few seconds after the lane's booth charged a vehicle: its gate light shows green.</summary>
-        private bool JustPaid(Entity plaza, int lane)
+        /// <summary>A lane's signal (both colours, one shown at a time) and, on a cash lane, its swinging arm.</summary>
+        private Gate GateFor(Entity plaza, PlazaLayout layout, int id, int lane, bool arm)
         {
-            if (!PlazaStats.Plazas.TryGetValue(plaza, out PlazaStats stats))
+            List<Piece> Signal(bool green)
             {
-                return false;
+                var builder = new PlazaMeshBuilder();
+                layout.BuildLaneSignal(builder, lane, closed: !green);
+                return PiecesOf(builder, $"signal|{id}|{lane}|{green}").ToList();
             }
-            uint? last = stats.Booth(lane).LastFrame;
-            return last.HasValue && m_SimulationSystem.frameIndex - last.Value < GreenFrames;
-        }
-
-        /// <param name="arm">Include the gate cabinet and arm (cash lanes).</param>
-        /// <param name="green">Signal lamp green (a vehicle just paid) or red (stop until you pay).</param>
-        private IEnumerable<Piece> GatePieces(PlazaLayout layout, int id, int lane, bool arm, bool green)
-        {
-            var builder = new PlazaMeshBuilder();
+            var gate = new Gate
+            {
+                State = PlazaStats.Of(plaza).Booth(lane).Gate,
+                Red = Signal(false),
+                Green = Signal(true),
+                Hinge = layout.GateHinge(lane),
+            };
             if (arm)
             {
-                layout.BuildGateArm(builder, lane);
+                var builder = new PlazaMeshBuilder();
+                layout.BuildGateBar(builder, lane);
+                gate.Arm = PiecesOf(builder, $"arm|{id}|{lane}").First();
             }
-            layout.BuildLaneSignal(builder, lane, closed: !green);
+            return gate;
+        }
+
+        /// <summary>One piece per paint in the builder, meshes cached under the key.</summary>
+        private IEnumerable<Piece> PiecesOf(PlazaMeshBuilder builder, string key)
+        {
             foreach (var part in builder.RawParts)
             {
                 var p = part;
-                Mesh mesh = MeshOf($"gate|{id}|{lane}|{arm}|{green}|{part.paint}", () => ToMesh(p.vertices, p.normals, p.uvs, p.triangles, $"TollPlaza gate {part.paint}"));
+                Mesh mesh = MeshOf($"{key}|{part.paint}", () => ToMesh(p.vertices, p.normals, p.uvs, p.triangles, $"TollPlaza gate {p.paint}"));
                 Material material = part.paint == Paint.GateArm
                     ? MaterialOf("gate|stripes", SignArt.GateStripes)
                     : MaterialOf($"color|{part.paint}", null, Paints.ColorOf(part.paint));
@@ -369,17 +390,34 @@ namespace TollPlaza
             }
             try
             {
+                // Simulation time including the fraction of the current frame, so the arms move smoothly at any
+                // game speed and stop when paused.
+                double now = m_SimulationSystem.frameIndex + (double)m_SimulationSystem.frameTime;
                 foreach (Camera camera in cameras)
                 {
                     if (camera.cameraType != CameraType.Game && camera.cameraType != CameraType.SceneView)
                     {
                         continue;
                     }
-                    foreach (var (matrix, pieces) in m_Draw)
+                    foreach (var (matrix, pieces, gates) in m_Draw)
                     {
                         foreach (Piece piece in pieces)
                         {
-                            Graphics.DrawMesh(piece.Mesh, matrix, piece.Material, 0, camera, 0, null, castShadows: false, receiveShadows: true);
+                            Draw(piece, matrix, camera);
+                        }
+                        foreach (Gate gate in gates)
+                        {
+                            foreach (Piece piece in gate.State.Green(now) ? gate.Green : gate.Red)
+                            {
+                                Draw(piece, matrix, camera);
+                            }
+                            if (gate.Arm is Piece arm)
+                            {
+                                // Built raised; down is -90° about Z (pointing across the lane).
+                                float angle = -90f * (1f - gate.State.Openness(now));
+                                Matrix4x4 swing = Matrix4x4.Translate(gate.Hinge) * Matrix4x4.Rotate(Quaternion.Euler(0f, 0f, angle)) * Matrix4x4.Translate(-gate.Hinge);
+                                Draw(arm, matrix * swing, camera);
+                            }
                         }
                     }
                 }
@@ -389,5 +427,8 @@ namespace TollPlaza
                 TurnOff(e);
             }
         }
+
+        private static void Draw(Piece piece, Matrix4x4 matrix, Camera camera) =>
+            Graphics.DrawMesh(piece.Mesh, matrix, piece.Material, 0, camera, 0, null, castShadows: false, receiveShadows: true);
     }
 }

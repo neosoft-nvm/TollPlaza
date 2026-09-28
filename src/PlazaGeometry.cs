@@ -774,20 +774,42 @@ namespace TollPlaza
             BuildLaneSignal(b, lane, closed);
         }
 
+        /// <summary>Plaza-local Z of the lanes' exit gates and signals.</summary>
+        public float GateZ => IslandLength * 0.5f - 2.4f;
+
+        private float GateCabinetX(int lane) => IslandCenterX(lane) + IslandWidthAt(lane) * 0.5f - 0.3f;
+
         /// <summary>The cash lane's gate cabinet with its red and white arm, raised.</summary>
         public void BuildGateArm(PlazaMeshBuilder b, int lane)
         {
-            float top = IslandHeight;
-            float islandRight = IslandCenterX(lane) + IslandWidthAt(lane) * 0.5f;
-            float gz = IslandLength * 0.5f - 2.4f;
+            BuildGateCabinet(b, lane);
+            BuildGateBar(b, lane);
+        }
 
-            // Cabinet.
-            float cx = islandRight - 0.3f;
+        /// <summary>The gate cabinet on the island, left of its lane.</summary>
+        public void BuildGateCabinet(PlazaMeshBuilder b, int lane)
+        {
+            float top = IslandHeight;
+            float gz = GateZ;
+            float cx = GateCabinetX(lane);
             b.Box(Paint.SafetyYellow, new Vector3(cx - 0.18f, top, gz - 0.18f), new Vector3(cx + 0.18f, top + 1.0f, gz + 0.18f));
             b.Box(Paint.DarkMetal, new Vector3(cx - 0.2f, top + 1.0f, gz - 0.2f), new Vector3(cx + 0.2f, top + 1.06f, gz + 0.2f));
-            // Arm, raised.
+        }
+
+        /// <summary>
+        /// The red and white arm, raised (pointing up from its hinge on the cabinet). Lowered it points across
+        /// its lane (+X): rotate it -90° about Z around <see cref="GateHinge"/>.
+        /// </summary>
+        public void BuildGateBar(PlazaMeshBuilder b, int lane)
+        {
+            float top = IslandHeight;
+            float gz = GateZ;
+            float cx = GateCabinetX(lane);
             b.Box(Paint.GateArm, new Vector3(cx + 0.05f, top + 0.8f, gz - 0.05f), new Vector3(cx + 0.14f, top + 0.8f + 3.2f, gz + 0.05f));
         }
+
+        /// <summary>The point the arm swings about (plaza-local): its foot, at the cabinet.</summary>
+        public Vector3 GateHinge(int lane) => new Vector3(GateCabinetX(lane) + 0.095f, IslandHeight + 0.845f, GateZ);
 
         /// <summary>
         /// The two-lamp signal on a short post at the downstream end of the island, facing the driver: red
@@ -797,7 +819,7 @@ namespace TollPlaza
         {
             float top = IslandHeight;
             float islandRight = IslandCenterX(lane) + IslandWidthAt(lane) * 0.5f;
-            float gz = IslandLength * 0.5f - 2.4f;
+            float gz = GateZ;
 
             // Signal on a short post just past the gate, facing the driver.
             float sx = islandRight - 0.35f;
