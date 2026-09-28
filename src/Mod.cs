@@ -44,6 +44,11 @@ namespace TollPlaza
                     strings[$"Assets.DESCRIPTION[{plaza.id}{PlazaAssetSystem.RoadSuffix}]"] =
                         "American-style toll plaza that brings its own road: place it, then connect your highway to both ends.";
                 }
+                // The Budget screen line (TollBudgetSystem); its one source is IncomeSource.Count by name.
+                strings[$"EconomyPanel.BUDGET_ITEM[{TollBudgetSystem.ItemId}]"] = "Toll Plazas";
+                strings[$"EconomyPanel.BUDGET_ITEM_DESCRIPTION[{TollBudgetSystem.ItemId}]"] =
+                    "Tolls paid by vehicles passing through your toll plazas: last month's total, or this month's so far until a month has passed. Paid into the city's money as vehicles pass.";
+                strings["EconomyPanel.BUDGET_SUB_ITEM[Count]"] = "Toll Plazas";
                 GameManager.instance.localizationManager.AddSource("en-US", new MemorySource(strings));
             }
             catch (Exception e)
@@ -57,6 +62,7 @@ namespace TollPlaza
             updateSystem.UpdateAt<PlazaInfoSection>(SystemUpdatePhase.UIUpdate);
             updateSystem.UpdateAt<PlazaDiagnosticsSystem>(SystemUpdatePhase.GameSimulation);
             updateSystem.UpdateAt<PlazaPersistence>(SystemUpdatePhase.UIUpdate);
+            updateSystem.UpdateAt<TollBudgetSystem>(SystemUpdatePhase.UIUpdate);
         }
 
         // The icon is written next to the DLL at load time and served to the UI through a coui:// host,

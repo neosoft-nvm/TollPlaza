@@ -73,8 +73,10 @@
 - **Real cause found (16:40)**: step 2 showed "undefined"/"NaN" everywhere, then crashed. The plaza panel's stats and the control panel's city totals were both written as type "TollPlaza.Stats", and only the plaza's had perMinute/measuredSeconds. The UI engine (cohtml) keeps one property layout per type name, so the plaza data was read with the wrong layout: garbage values, and a crash when it read past the end. The panel's height had nothing to do with it. Fix: the plaza's stats are "TollPlaza.PlazaStats". Rule: every distinct shape written to the UI needs its own type name.
 - **Fix confirmed (16:40)**: real values back. Vehicles/min then moved back to its own "Measured, last minute" row (plaza and booth details) and a "/min" line on each booth tile, as first designed.
 
+## Deployed 2026-09-28 ~16:56, confirmed in game
+- **Budget line** (shows as the last Income row, under Service Trade, and grows as tolls come in): "Toll Plazas" under Income on the Budget screen, with the plaza icon, in the chart, the total income and the monthly balance. Amount = last month's tolls, or this month's so far until a month with tolls has passed. The game's income sources are a fixed list, so `TollBudgetSystem` adds a 15th item (source index 14) to the budget screen's item list in memory, and wraps two of `BudgetUISystem`'s private bindings by reflection (values: 14 + tolls; total income: + tolls). If the game's code changes, it logs a warning and leaves the Budget screen alone. Nothing saved; the tolls themselves were already paid into city money as vehicles pass.
+
 ## Next build
-1. **Budget line**: a "Toll Plazas" income line on the game's Budget screen, counted in city income.
 
 ## To do
 2. **Preview export broken**: tools/PreviewExport fails loading a texture source (`TextureBaker.LoadDetail`, System.Drawing "Parameter is not valid"), so preview/plaza.html still shows the old short approach.
