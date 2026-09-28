@@ -28,6 +28,7 @@ namespace TollPlaza
             m_SimulationSystem = World.GetOrCreateSystemManaged<SimulationSystem>();
             m_InfoUISystem.AddMiddleSection(this);
             AddBinding(new TriggerBinding<int>("tollPlaza", "toggleBooth", ToggleBooth));
+            AddBinding(new TriggerBinding<int>("tollPlaza", "toggleBoothClosed", ToggleBoothClosed));
             AddBinding(new TriggerBinding<string>("tollPlaza", "renamePlaza", RenamePlaza));
             AddBinding(new TriggerBinding("tollPlaza", "autoNamePlaza", AutoNamePlaza));
             m_NameSystem = World.GetOrCreateSystemManaged<Game.UI.NameSystem>();
@@ -74,6 +75,16 @@ namespace TollPlaza
             if (m_Layout != null && selectedEntity != Entity.Null)
             {
                 PlazaStats.ToggleCashLane(selectedEntity, m_Layout, lane);
+                m_InfoUISystem.RequestUpdate();
+            }
+        }
+
+        private void ToggleBoothClosed(int lane)
+        {
+            if (m_Layout != null && selectedEntity != Entity.Null && lane >= 0 && lane < m_Layout.LaneCount)
+            {
+                PlazaStats booth = PlazaStats.Of(selectedEntity).Booth(lane);
+                booth.Closed = !booth.Closed;
                 m_InfoUISystem.RequestUpdate();
             }
         }
@@ -136,6 +147,8 @@ namespace TollPlaza
                 writer.TypeBegin("TollPlaza.Booth");
                 writer.PropertyName("cash");
                 writer.Write(PlazaStats.IsCashLane(selectedEntity, m_Layout, lane));
+                writer.PropertyName("closed");
+                writer.Write(PlazaStats.IsClosedLane(selectedEntity, lane));
                 writer.PropertyName("stats");
                 WriteStats(writer, booth);
                 writer.TypeEnd();

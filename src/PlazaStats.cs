@@ -68,6 +68,9 @@ namespace TollPlaza
         // The frames of the vehicles charged in the last minute (not saved).
         private readonly Queue<uint> m_Recent = new Queue<uint>();
 
+        /// <summary>A booth lane closed by the player (not saved): red X, gate down, traffic kept out.</summary>
+        public bool Closed { get; set; }
+
         /// <summary>A booth lane's exit gate and signal (not saved).</summary>
         public LaneGate Gate { get; } = new LaneGate();
 
@@ -145,6 +148,9 @@ namespace TollPlaza
                 ? stats.Cash[lane]
                 : layout.IsCashLane(lane);
         }
+
+        public static bool IsClosedLane(Entity plaza, int lane) =>
+            s_Plazas.TryGetValue(plaza, out PlazaStats stats) && stats.m_Booths.TryGetValue(lane, out PlazaStats booth) && booth.Closed;
 
         public static void ToggleCashLane(Entity plaza, PlazaLayout layout, int lane)
         {

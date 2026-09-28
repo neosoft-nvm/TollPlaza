@@ -52,6 +52,28 @@ namespace TollPlaza
             }
         }
 
+        /// <summary>A closed lane's sign: black, with a big red X and LANE CLOSED, like a lane-use signal.</summary>
+        public static Texture2D ClosedLaneSign(Vector2 meters)
+        {
+            using (Bitmap bmp = NewSign(meters, 1024, Color.FromArgb(20, 20, 20), out Graphics g))
+            {
+                using (g)
+                {
+                    float w = bmp.Width;
+                    float h = bmp.Height;
+                    float s = h * 0.34f; // half the X's size
+                    float cx = w * 0.5f, cy = h * 0.4f;
+                    using (var pen = new Pen(Color.FromArgb(230, 25, 20), h * 0.1f) { StartCap = LineCap.Round, EndCap = LineCap.Round })
+                    {
+                        g.DrawLine(pen, cx - s, cy - s * 0.8f, cx + s, cy + s * 0.8f);
+                        g.DrawLine(pen, cx - s, cy + s * 0.8f, cx + s, cy - s * 0.8f);
+                    }
+                    DrawCentered(g, "LANE CLOSED", new RectangleF(0, h * 0.72f, w, h * 0.2f), h * 0.15f);
+                }
+                return ToTexture(bmp, "TollPlaza lane sign: closed");
+            }
+        }
+
         /// <summary>US regulatory speed limit sign (R2-1): white, black border, black legend.</summary>
         public static Texture2D SpeedSign(Vector2 meters, int mph)
         {

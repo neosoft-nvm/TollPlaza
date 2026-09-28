@@ -15,6 +15,7 @@ interface Stats extends MonthPair {
 
 interface Booth {
     cash: boolean;
+    closed: boolean;
     stats: Stats;
 }
 
@@ -105,12 +106,12 @@ const PlazaSection = (props: PlazaSectionProps) => {
                 <div className={styles.booths}>
                     {props.booths.map((b, i) => (
                         <Button key={i} variant="flat"
-                            className={`${styles.booth} ${b.cash ? styles.cash : styles.etc} ${booth === i ? styles.boothSelected : ""}`}
+                            className={`${styles.booth} ${b.closed ? styles.closed : b.cash ? styles.cash : styles.etc} ${booth === i ? styles.boothSelected : ""}`}
                             onSelect={() => setBooth(booth === i ? null : i)}>
                             {/* Stacked in a div of its own: the game's Button lays its children out in a row. */}
                             <div className={styles.boothStack}>
                                 <div>{`${i + 1}`}</div>
-                                <div className={styles.boothType}>{b.cash ? "Cash" : "E-Toll"}</div>
+                                <div className={styles.boothType}>{b.closed ? "Closed" : b.cash ? "Cash" : "E-Toll"}</div>
                                 <div className={styles.boothMoney}>{dollars(b.stats.thisMonth.cents)}</div>
                                 <div className={styles.boothType}>{`${b.stats.perMinute}/min`}</div>
                             </div>
@@ -121,10 +122,14 @@ const PlazaSection = (props: PlazaSectionProps) => {
             {selected && booth !== null && (
                 <div className={styles.section}>
                     <div className={styles.row}>
-                        <span className={styles.heading}>{`Booth ${booth + 1} — ${selected.cash ? "Cash" : "E-Toll"}`}</span>
+                        <span className={styles.heading}>{`Booth ${booth + 1} — ${selected.cash ? "Cash" : "E-Toll"}${selected.closed ? " (closed)" : ""}`}</span>
                         <Button variant="flat" className={styles.switch}
                             onSelect={() => trigger("tollPlaza", "toggleBooth", booth)}>
                             {`Switch to ${selected.cash ? "E-Toll" : "Cash"}`}
+                        </Button>
+                        <Button variant="flat" className={styles.switch}
+                            onSelect={() => trigger("tollPlaza", "toggleBoothClosed", booth)}>
+                            {selected.closed ? "Open lane" : "Close lane"}
                         </Button>
                     </div>
                     <RateRow stats={selected.stats} />
