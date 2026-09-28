@@ -413,8 +413,8 @@ namespace TollPlaza
                             }
                             if (gate.Arm is Piece arm)
                             {
-                                // Built raised; down is -90° about Z (pointing across the lane).
-                                float angle = -90f * (1f - gate.State.Openness(now));
+                                // Built down (across the lane); open is +90° about Z (pointing up).
+                                float angle = 90f * gate.State.Openness(now);
                                 Matrix4x4 swing = Matrix4x4.Translate(gate.Hinge) * Matrix4x4.Rotate(Quaternion.Euler(0f, 0f, angle)) * Matrix4x4.Translate(-gate.Hinge);
                                 Draw(arm, matrix * swing, camera);
                             }

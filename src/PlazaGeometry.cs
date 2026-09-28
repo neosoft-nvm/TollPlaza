@@ -288,6 +288,19 @@ namespace TollPlaza
             }
         }
 
+        /// <summary>A box turned about a pivot; its texture turns with it (UVs are those of the unturned box).</summary>
+        public void RotatedBox(Paint paint, Vector3 min, Vector3 max, Vector3 pivot, Quaternion rotation)
+        {
+            Part part = GetPart(paint);
+            int start = part.Vertices.Count;
+            Box(paint, min, max);
+            for (int i = start; i < part.Vertices.Count; i++)
+            {
+                part.Vertices[i] = pivot + rotation * (part.Vertices[i] - pivot);
+                part.Normals[i] = rotation * part.Normals[i];
+            }
+        }
+
         private static void AddVertex(Part part, Vector3 p, Vector3 n, Vector3 u, Vector3 v, float tileMeters)
         {
             part.Vertices.Add(p);
@@ -765,8 +778,8 @@ namespace TollPlaza
         /// <summary>
         /// Cash-lane exit at the downstream end of the island (by the end bollards), well clear of the booth:
         /// a gate cabinet with a red and white striped arm, and a small two-lamp signal (green = paid / go,
-        /// red = stop or lane closed). The arm is shown raised; once the toll logic runs it will drop until
-        /// the vehicle has paid.
+        /// red = stop or lane closed). In the working plaza PlazaSignSystem raises the arm as each vehicle
+        /// reaches it; the plain model shows it down.
         /// </summary>
         public void BuildExitGate(PlazaMeshBuilder b, int lane, bool closed)
         {
@@ -779,7 +792,7 @@ namespace TollPlaza
 
         private float GateCabinetX(int lane) => IslandCenterX(lane) + IslandWidthAt(lane) * 0.5f - 0.3f;
 
-        /// <summary>The cash lane's gate cabinet with its red and white arm, raised.</summary>
+        /// <summary>The cash lane's gate cabinet with its red and white arm, down.</summary>
         public void BuildGateArm(PlazaMeshBuilder b, int lane)
         {
             BuildGateCabinet(b, lane);
@@ -797,15 +810,17 @@ namespace TollPlaza
         }
 
         /// <summary>
-        /// The red and white arm, raised (pointing up from its hinge on the cabinet). Lowered it points across
-        /// its lane (+X): rotate it -90° about Z around <see cref="GateHinge"/>.
+        /// The red and white arm, down (pointing across its lane, +X, from its hinge on the cabinet). To open it,
+        /// rotate it up to +90° about Z around <see cref="GateHinge"/>.
         /// </summary>
         public void BuildGateBar(PlazaMeshBuilder b, int lane)
         {
             float top = IslandHeight;
             float gz = GateZ;
             float cx = GateCabinetX(lane);
-            b.Box(Paint.GateArm, new Vector3(cx + 0.05f, top + 0.8f, gz - 0.05f), new Vector3(cx + 0.14f, top + 0.8f + 3.2f, gz + 0.05f));
+            // Modelled upright (so its stripes run along it) and laid down about the hinge.
+            b.RotatedBox(Paint.GateArm, new Vector3(cx + 0.05f, top + 0.8f, gz - 0.05f), new Vector3(cx + 0.14f, top + 0.8f + 3.2f, gz + 0.05f),
+                GateHinge(lane), Quaternion.Euler(0f, 0f, -90f));
         }
 
         /// <summary>The point the arm swings about (plaza-local): its foot, at the cabinet.</summary>
@@ -889,7 +904,7 @@ namespace TollPlaza
 
             if (cash && gate)
             {
-                BuildExitGate(b, lane, closed);
+                BuildExitGate(b, lane, closed: true); // at rest: arm down, signal red
             }
 
             // Lane speed limit on a post atop the crash cushion at the nose of the lane's left island.
