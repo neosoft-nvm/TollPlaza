@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using Colossal.IO.AssetDatabase;
 using Colossal.Localization;
 using Colossal.Logging;
 using Colossal.UI;
@@ -53,6 +54,9 @@ namespace TollPlaza
             updateSystem.UpdateAt<PlazaAssetSystem>(SystemUpdatePhase.PrefabUpdate);
             updateSystem.UpdateAt<TollCollectionSystem>(SystemUpdatePhase.GameSimulation);
             updateSystem.UpdateAt<TollUISystem>(SystemUpdatePhase.UIUpdate);
+            updateSystem.UpdateAt<PlazaInfoSection>(SystemUpdatePhase.UIUpdate);
+            updateSystem.UpdateAt<PlazaDiagnosticsSystem>(SystemUpdatePhase.GameSimulation);
+            updateSystem.UpdateAt<PlazaPersistence>(SystemUpdatePhase.UIUpdate);
         }
 
         // The icon is written next to the DLL at load time and served to the UI through a coui:// host,

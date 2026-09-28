@@ -31,6 +31,9 @@ namespace TollPlaza
         private ValueBinding<int> m_BusRate;
         private ValueBinding<int> m_CashMph;
         private ValueBinding<int> m_EtcMph;
+        private RawValueBinding m_Months;
+        private RawValueBinding m_PlazaList;
+        private readonly List<(Entity entity, PrefabBase prefab, int lanes)> m_Placed = new List<(Entity, PrefabBase, int)>();
 
         private PrefabSystem m_PrefabSystem;
         private EntityQuery m_ObjectQuery;
@@ -39,10 +42,21 @@ namespace TollPlaza
         /// <summary>Plaza prefabs placed with roads count their booth lanes; filled by PlazaAssetSystem.</summary>
         public static readonly Dictionary<PrefabBase, int> PlazaLaneCounts = new Dictionary<PrefabBase, int>();
 
+        /// <summary>Placed plazas numbered 1, 2, ... in the order they were built.</summary>
+        public static readonly Dictionary<Entity, int> PlazaNumbers = new Dictionary<Entity, int>();
+
+        /// <summary>The plaza's name in the panels (see PlazaNames).</summary>
+        public static string NameOf(Entity plaza) => PlazaNames.Of(plaza);
+
+        private NameSystem m_NameSystem;
+        private Game.City.CityConfigurationSystem m_CityConfiguration;
+
         protected override void OnCreate()
         {
             base.OnCreate();
             m_PrefabSystem = World.GetOrCreateSystemManaged<PrefabSystem>();
+            m_NameSystem = World.GetOrCreateSystemManaged<NameSystem>();
+            m_CityConfiguration = World.GetOrCreateSystemManaged<Game.City.CityConfigurationSystem>();
             m_ObjectQuery = GetEntityQuery(
                 ComponentType.ReadOnly<Game.Objects.Object>(),
                 ComponentType.ReadOnly<PrefabRef>(),
@@ -59,11 +73,60 @@ namespace TollPlaza
             AddBinding(m_CarRate = new ValueBinding<int>(Group, "carRate", TollState.CarRateCents));
             AddBinding(m_TruckRate = new ValueBinding<int>(Group, "truckRate", TollState.TruckRateCents));
             AddBinding(m_BusRate = new ValueBinding<int>(Group, "busRate", TollState.BusRateCents));
-            AddBinding(m_CashMph = new ValueBinding<int>(Group, "cashMph", PlazaLayout.CashSpeedMph));
-            AddBinding(m_EtcMph = new ValueBinding<int>(Group, "etcMph", PlazaLayout.EtcSpeedMph));
+            AddBinding(m_CashMph = new ValueBinding<int>(Group, "cashMph", TollState.CashMph));
+            AddBinding(m_EtcMph = new ValueBinding<int>(Group, "etcMph", TollState.EtcMph));
+
+            // City-wide traffic and revenue, this month and last.
+            AddBinding(m_Months = new RawValueBinding(Group, "months", writer =>
+            {
+                writer.TypeBegin("TollPlaza.Stats");
+                writer.PropertyName("thisMonth");
+                PlazaInfoSection.WriteMonth(writer, PlazaStats.City.ThisMonth);
+                writer.PropertyName("lastMonth");
+                PlazaInfoSection.WriteMonth(writer, PlazaStats.City.LastMonth);
+                writer.TypeEnd();
+            }));
+
+            // Every placed plaza with its monthly numbers; the panel links each one to the plaza in the city.
+            AddBinding(m_PlazaList = new RawValueBinding(Group, "plazaList", writer =>
+            {
+                writer.ArrayBegin(m_Placed.Count);
+                for (int i = 0; i < m_Placed.Count; i++)
+                {
+                    (Entity entity, PrefabBase prefab, int lanes) = m_Placed[i];
+                    PlazaStats stats = PlazaStats.Of(entity);
+                    stats.Roll(PlazaStats.City.Month);
+                    writer.TypeBegin("TollPlaza.PlazaItem");
+                    writer.PropertyName("entity");
+                    writer.Write(entity);
+                    writer.PropertyName("name");
+                    writer.Write(NameOf(entity));
+                    writer.PropertyName("lanes");
+                    writer.Write(lanes);
+                    writer.PropertyName("outdated");
+                    writer.Write(PlazaNames.IsOutdated(entity));
+                    writer.PropertyName("thisMonth");
+                    PlazaInfoSection.WriteMonth(writer, stats.ThisMonth);
+                    writer.PropertyName("lastMonth");
+                    PlazaInfoSection.WriteMonth(writer, stats.LastMonth);
+                    writer.TypeEnd();
+                }
+                writer.ArrayEnd();
+            }));
 
             // setRate("car" | "truck" | "bus", deltaCents): the panel's +/- buttons.
             AddBinding(new TriggerBinding<string, int>(Group, "adjustRate", AdjustRate));
+            // adjustSpeed("cash" | "etc", deltaMph): the lane speed +/- buttons.
+            AddBinding(new TriggerBinding<string, int>(Group, "adjustSpeed", AdjustSpeed));
+        }
+
+        private void AdjustSpeed(string lane, int deltaMph)
+        {
+            int Speed(int mph) => mph < 5 ? 5 : (mph > 70 ? 70 : mph);
+            if (lane == "cash") TollState.CashMph = Speed(TollState.CashMph + deltaMph);
+            if (lane == "etc") TollState.EtcMph = Speed(TollState.EtcMph + deltaMph);
+            m_CashMph.Update(TollState.CashMph);
+            m_EtcMph.Update(TollState.EtcMph);
         }
 
         private void AdjustRate(string vehicleClass, int deltaCents)
@@ -97,6 +160,16 @@ namespace TollPlaza
             m_Trucks.Update(Count(VehicleClass.Truck));
             m_Buses.Update(Count(VehicleClass.Bus));
             m_Exempt.Update(Count(VehicleClass.Exempt));
+            // Rates and speeds change on city load too (restored by PlazaPersistence), not only from the panel.
+            m_CarRate.Update(TollState.CarRateCents);
+            m_TruckRate.Update(TollState.TruckRateCents);
+            m_BusRate.Update(TollState.BusRateCents);
+            m_CashMph.Update(TollState.CashMph);
+            m_EtcMph.Update(TollState.EtcMph);
+            System.DateTime date = World.GetOrCreateSystemManaged<Game.Simulation.TimeSystem>().GetCurrentDateTime();
+            PlazaStats.City.Roll(date.Year * 12 + date.Month);
+            m_Months.Update();
+            m_PlazaList.Update();
         }
 
         private static int Count(VehicleClass c) => TollState.Vehicles.TryGetValue(c, out int n) ? n : 0;
@@ -119,6 +192,8 @@ namespace TollPlaza
             {
                 return;
             }
+            m_Placed.Clear();
+            using (NativeArray<Entity> entities = m_ObjectQuery.ToEntityArray(Allocator.Temp))
             using (NativeArray<PrefabRef> prefabs = m_ObjectQuery.ToComponentDataArray<PrefabRef>(Allocator.Temp))
             {
                 for (int i = 0; i < prefabs.Length; i++)
@@ -127,9 +202,68 @@ namespace TollPlaza
                     {
                         plazas++;
                         lanes += n;
+                        m_Placed.Add((entities[i], m_PrefabSystem.GetPrefab<PrefabBase>(prefabs[i]), n));
                     }
                 }
             }
+            m_Placed.Sort((a, b) => a.entity.Index.CompareTo(b.entity.Index)); // stable numbering: oldest first
+            PlazaNumbers.Clear();
+            for (int i = 0; i < m_Placed.Count; i++)
+            {
+                PlazaNumbers[m_Placed[i].entity] = i + 1;
+            }
+            PlazaNames.Refresh(EntityManager, m_PrefabSystem, m_NameSystem, m_CityConfiguration.cityName, m_Placed);
+            foreach (var placed in m_Placed)
+            {
+                if (m_LayoutLogged.Add(placed.entity))
+                {
+                    LogRoadLayout(placed.entity, placed.prefab);
+                }
+            }
+        }
+
+        private readonly HashSet<Entity> m_LayoutLogged = new HashSet<Entity>();
+
+        /// <summary>
+        /// Logs a plaza's road pieces once, in plaza coordinates (x across, z along travel): which road, where
+        /// it starts and ends, and how many roads meet at each end. For finding why the 6-booth plaza's road
+        /// wraps around it instead of running under the booths.
+        /// </summary>
+        private void LogRoadLayout(Entity plaza, PrefabBase prefab)
+        {
+            if (!EntityManager.HasBuffer<Game.Net.SubNet>(plaza) || !EntityManager.HasComponent<Game.Objects.Transform>(plaza))
+            {
+                Mod.Log.Info($"[TollPlaza] Layout of {NameOf(plaza)} ({prefab.name}): no road pieces.");
+                return;
+            }
+            Game.Objects.Transform t = EntityManager.GetComponentData<Game.Objects.Transform>(plaza);
+            Unity.Mathematics.quaternion inverse = Unity.Mathematics.math.inverse(t.m_Rotation);
+            string Local(Unity.Mathematics.float3 p)
+            {
+                Unity.Mathematics.float3 l = Unity.Mathematics.math.mul(inverse, p - t.m_Position);
+                return $"({l.x:F1}, {l.y:F1}, {l.z:F1})";
+            }
+            int Joined(Entity node) =>
+                EntityManager.HasBuffer<Game.Net.ConnectedEdge>(node) ? EntityManager.GetBuffer<Game.Net.ConnectedEdge>(node, true).Length : -1;
+
+            var lines = new List<string>();
+            DynamicBuffer<Game.Net.SubNet> subNets = EntityManager.GetBuffer<Game.Net.SubNet>(plaza, isReadOnly: true);
+            for (int i = 0; i < subNets.Length; i++)
+            {
+                Entity net = subNets[i].m_SubNet;
+                if (!EntityManager.HasComponent<Game.Net.Edge>(net) || !EntityManager.HasComponent<Game.Net.Curve>(net))
+                {
+                    continue;
+                }
+                string road = EntityManager.HasComponent<PrefabRef>(net)
+                    && m_PrefabSystem.TryGetPrefab(EntityManager.GetComponentData<PrefabRef>(net), out PrefabBase r) ? r.name : "?";
+                Game.Net.Curve curve = EntityManager.GetComponentData<Game.Net.Curve>(net);
+                Game.Net.Edge edge = EntityManager.GetComponentData<Game.Net.Edge>(net);
+                lines.Add($"{road} {Local(curve.m_Bezier.a)} > {Local(curve.m_Bezier.b)} > {Local(curve.m_Bezier.c)} > {Local(curve.m_Bezier.d)}, "
+                    + $"{curve.m_Length:F1} m, roads at ends {Joined(edge.m_Start)}/{Joined(edge.m_End)}");
+            }
+            Mod.Log.Info($"[TollPlaza] Layout of {NameOf(plaza)} ({prefab.name}, {(PlazaNames.IsOutdated(plaza) ? "old" : "current")}): "
+                + string.Join(" | ", lines));
         }
     }
 }

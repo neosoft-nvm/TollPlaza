@@ -1,17 +1,73 @@
 # Toll Plaza — Roadmap
 
 ## Done
-- **Textures in game** — real CC0 textures, matte finishes, lettered signs, lane numbers, speed limit signs.
-- **Built-in road** — plaza carries real game roads (sub-nets) that fan out to the booth lanes and merge back, with highway stubs at both ends to connect to (confirmed working in game, 4-lane).
+- **Textures in game**: real CC0 textures, matte finishes, lettered signs, lane numbers, speed limit signs.
+- **1:1:1 road design**: an N-booth plaza has N lanes in and N lanes out, dead straight, with the islands on the lane lines. Sizes 2–6.
+- **No road names across the plaza**: the plaza's road pieces are nameless copies.
+- **Toll collection**: every vehicle passing through is charged by class (car/truck/bus). Confirmed in game (0 unpaid).
+- **Control panel**: toll rates, booth speeds (+/−), revenue, vehicle counts, and a plaza list with click-to-go.
+- **Plaza info section**: click a plaza to see this month vs. last month for the plaza and each booth, and switch a booth between cash and E-Toll.
 
-## In progress / next
-1. **Road versions of every size** — 2/4/6/8 lanes (12 parked), stub lane count scaled to the plaza.
-2. **Booth-lane street names** — each booth lane currently gets its own random street name; make them follow the highway's name or hide them.
-3. **Toll logic** — vehicles slow to the plaza speed limit (shown on the attenuator signs) and pay per vehicle class; closed lanes are avoided.
-4. **Control panel + budget** — plaza/booth counts, toll rates, revenue, vehicle counts, per-lane setup (electronic / cash / closed with red X); a "Highway Tolls" income line in the city budget.
-5. **Plaza names** — billboard shows "<District> Toll Plaza" (city name if no district), editable per plaza.
+## Deployed, needs in-game testing (build of 2026-09-27 ~10 PM)
+- 6-booth plaza no longer clones asset-pack bridges (no suspension towers).
+- Approach 50% longer (1.95× the exit).
+- 4 delineator posts per island end, with a solid white line underneath.
+- Speed signs raised on posts above the crash cushions (the delineators were hiding them).
+- Speeds: E-Toll 15 mph, cash 10 mph, approach/exit zone 25 mph.
+- Roof sign on every plaza size.
+
+## Deployed, needs in-game testing (build of 2026-09-28 morning)
+- **Braking fix**: cause confirmed in game code: cars brake at ~1 g (10 m/s²) at the last possible moment for any lower limit ahead, and the approach was only 19.5 m. The approach is now 100 m in 8 pieces whose limits step down evenly (in speed squared) from the entry highway's limit to 25 mph, then the booths. Only newly placed plazas get it: bulldoze and re-place existing ones.
+- **Braking probe**: the log reports each plaza's approach steps, and a "Braking in plazas" line (average/max peak deceleration, % over 6 m/s²) to compare before/after.
+- **Booth stats**: a vehicle counts for the booth lane it drives through, not the lane it entered on.
+- **Saved with the city, outside the save file**: on every game save a snapshot goes to `ModsData/TollPlaza/Cities/<city>/<frame>.json`; loading a save restores the snapshot made at that save's frame (older saves get their own numbers back). Saves with no snapshot keep the newest rates/speeds/lanes, stats from zero. Removing the mod leaves saves untouched.
+- **City load reset**: stats no longer carry over from one city to another; vehicles already inside a plaza at load aren't counted as unpaid.
+- **Movable control panel**: drag it by its title bar; it reopens where it was left (until the game restarts).
+
+## Built, not deployed yet (game was running), 2026-09-28 late morning
+- **Test of the 100 m approach**: no change. The probe showed every car hitting 12–16 m/s², i.e. a dead stop, and the approach log read "from 149 mph".
+- **Speed scale**: lanes store twice the speed the game shows (base highways log 66.7 m/s = 149 mph). Booth/zone speeds were half what was intended (10 mph cash was really crawling). Now doubled via `TollCollectionSystem.LaneSpeed`.
+- **Exit 10 m → 60 m**: the medians block lane changes between the booths, so cars that need another lane for the player's (usually narrower) road had to cross lanes in one car length after the booths. The game makes a car stop and reverse when its steering target is >45° off its heading (CarNavigationSystem), which matches the swerve-stop-reverse seen at the exits.
+- **Stop probe**: logs where cars brake hard or reverse (approach step / booths / exit / after), what blocked them, and their lane and lane change.
+
+## Deployed, needs in-game testing (build of 2026-09-28 afternoon)
+- **Test of the late-morning build**: exit swerving settled (no hard stops logged at the exits). Save/load restore confirmed ("10 of 10 plazas matched"). Remaining hard stops were in the last 25 m of the approach: normal braking for the 25 mph zone, queueing, and cars re-picking the shortest queue (`UpdateOptimalLane`) at the last second.
+- **Channelized approach, first try (deployed 10:14)**: the last 3 approach pieces were the raised-median road as 3 separate pieces. Hard stops left the last 25 m, but each joint between median-road pieces became a junction (turn arrows, X's on the inner lanes, dark junction paving) and cars avoided the inner lanes.
+- **Channelized approach, fix**: the channel (37.5 m) and the islands are now one continuous road piece, with no joint anywhere in the median road. It runs at the booth speeds (15/10 mph), and the speed steps (5 pieces) end at 25 mph where it starts. Stop log place "channel" = the median road before the islands. Only newly placed plazas get it. Deployed 2026-09-28 ~10:45.
+
+## Built, not deployed yet (game running), 2026-09-28 ~12:15–12:45
+- **One-piece channel confirmed in game**: cars use every lane and slow down by lane; no hard stops at the channel, booths or exit.
+- **Charged at the booth**: a vehicle used to be charged (and counted for its plaza) on entering the approach, but counted for a booth only on reaching it, so cars queuing on the approach made the plaza total run ahead of its booths (about 13 on a busy new plaza). Now it's charged, counted for the plaza and for its booth all at once, on the booth piece. Fallback: a vehicle first seen past the booths pays there (plaza total only).
+- **Old plazas**: plazas placed before today's builds credit only ~5% of vehicles to booths (their roads don't match the current layout). Bulldoze and re-place them. With the fallback they still collect at the exit.
+- **Plaza names (panels)**: named after the district the plaza stands in, else the road it's on, else the city ("Oak Hills Toll Plaza"); duplicates numbered ("... 2"). Rename in the plaza's info panel (empty name / "Auto" goes back to automatic). Names are kept with the toll data, not in the save. Roof sign unchanged.
+- **Outdated plazas flagged**: "old layout, re-place" in the control panel list and a warning in the info panel (a plaza whose median road isn't the current one-piece channel + islands).
+- **Layout log**: each plaza's road pieces are logged once ("Layout of …", plaza coordinates, roads meeting at each end), to diagnose the 6-booth plaza.
+
+## Built, not deployed yet (game running), 2026-09-28 ~12:50
+- **Test of the 12:30 build**: names work (district, road, city, numbered duplicates); outdated flags match the logged layouts. Roof sign doesn't follow renames (expected, to-do 5).
+- **6-booth road wedges**: the new 6-booth plaza's pieces are placed straight (layout log), but its open road was 6 copies of the 1-lane highway's outer "Transport Option" lane, which drew as wedges. Now plain highway lanes with the outer lane last, like the game's 5-lane highway. Re-place 6-booth plazas.
+- **Panel text**: the game's UI ignores number-format options ("$2587.5") and drops spaces between text pieces ("(5booths)", "145vehicles"); formatted by hand now. The "old layout" note moved under the plaza name so it doesn't overflow.
+
+- **6-booth, second try (13:10)**: plain lanes didn't help (same wedges, plus a blob beside the booths, only on 6-booth plazas). The one difference left was the base road: 6 lanes was a copy of the 1-lane highway. Now the widest real one-way highway (5 lanes) is extended with extra lanes, which also covers 8/10/12 later. Two 3-lane roads side by side were ruled out: the player's highway joins the plaza at one node per end.
+
+- **6-booth confirmed fixed (new city, 13:26)**: two 6-booth plazas on 6-lane highways, straight road through, no wedges, traffic flowing. Bigger plazas (8/10/12) can use the same extension of the 5-lane highway.
+
+## Next build
+1. **Budget line**: a "Toll Plazas" income line on the game's Budget screen, counted in city income.
+
+## To do
+2. **Preview export broken**: tools/PreviewExport fails loading a texture source (`TextureBaker.LoadDetail`, System.Drawing "Parameter is not valid"), so preview/plaza.html still shows the old short approach.
+3. ~~6-booth plaza broken~~: fixed 2026-09-28 (built from the 5-lane highway, not the 1-lane one).
+4. **Last-minute lane changes**: check the channelized approach in game; lengthen it (`PlazaLayout.ChannelPieces`) if cars still cut across just before it.
+5. **Plaza names on the roof sign**: "<District> Toll Plaza" (city name if no district), editable per plaza. Hard, because the sign mesh and texture are shared between plazas.
+6. **Booth signs follow the cash/E-Toll toggle**: the lane sign, speed sign and exit gate should update when a booth is switched.
+7. **Speed signs follow the panel speeds**: the signs are baked at 15/10 and don't change when speeds are edited.
+8. **Plaza deleted silently**: the plaza disappears when a road is drawn through it. Warn or protect it instead.
+9. **Closed lanes**: a red X lane signal, with traffic avoiding the lane.
+10. **Bigger plazas**: 8, 10 and 12 booths.
+11. **Commit and push** to GitHub once stable (everything since fe00117 is uncommitted).
 
 ## Future (community requests)
-- **Open-road tolling gantries** — overhead readers, no booths, no slowdown.
-- **Dynamic pricing** — rates that change with time of day or congestion.
-- **Maintenance funding** — toll revenue that offsets highway upkeep, which the base game economy doesn't connect.
+- **Open-road tolling gantries**: overhead readers, no booths, no slowdown.
+- **Dynamic pricing**: rates that change with time of day or congestion.
+- **Maintenance funding**: toll revenue that offsets highway upkeep, which the base game economy doesn't connect.

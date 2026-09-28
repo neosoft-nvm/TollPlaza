@@ -1,6 +1,8 @@
 import { bindValue, trigger, useValue } from "cs2/api";
+import { camera, Entity, selectedInfo } from "cs2/bindings";
 import { Button, FloatingButton, Panel } from "cs2/ui";
 import { useState } from "react";
+import { count as countOf, dollars as money, MonthCompare, MonthPair, Month } from "./stats";
 import styles from "./toll-panel.module.scss";
 
 // Values published by TollUISystem.cs (binding group "tollPlaza").
@@ -17,6 +19,22 @@ const truckRate$ = bindValue<number>(group, "truckRate", 600);
 const busRate$ = bindValue<number>(group, "busRate", 400);
 const cashMph$ = bindValue<number>(group, "cashMph", 10);
 const etcMph$ = bindValue<number>(group, "etcMph", 35);
+const emptyMonth: Month = { cars: 0, trucks: 0, buses: 0, exempt: 0, cents: 0 };
+const months$ = bindValue<MonthPair>(group, "months", { thisMonth: emptyMonth, lastMonth: emptyMonth });
+
+interface PlazaItem extends MonthPair {
+    entity: Entity;
+    name: string;
+    lanes: number;
+    outdated: boolean;
+}
+const plazaList$ = bindValue<PlazaItem[]>(group, "plazaList", []);
+
+/** Selects the plaza (opening its info panel) and moves the camera to it. */
+const goTo = (entity: Entity) => {
+    selectedInfo.selectEntity(entity);
+    camera.focusEntity(entity);
+};
 
 const RATE_STEP_CENTS = 25;
 const ICON = "coui://tollplaza/TollPlaza.svg";
@@ -44,9 +62,47 @@ const RateRow = ({ label, id, cents }: { label: string; id: string; cents: numbe
     </div>
 );
 
-/** Top-left toolbar button that opens the Toll Plaza control panel. */
+const SPEED_STEP_MPH = 5;
+
+const SpeedRow = ({ label, id, mph }: { label: string; id: string; mph: number }) => (
+    <div className={styles.row}>
+        <span className={styles.label}>{label}</span>
+        <div className={styles.stepper}>
+            <Button variant="flat" className={styles.step}
+                onSelect={() => trigger(group, "adjustSpeed", id, -SPEED_STEP_MPH)}>−</Button>
+            <span className={styles.rate}>{mph} mph</span>
+            <Button variant="flat" className={styles.step}
+                onSelect={() => trigger(group, "adjustSpeed", id, SPEED_STEP_MPH)}>+</Button>
+        </div>
+    </div>
+);
+
+// Where the panel was last dragged to, as the game's draggable panel stores it: the fraction of the screen
+// space left beside/below the panel (0 = left/top edge, 1 = right/bottom). The game gives no callback when
+// it moves, so it's read back from the panel on close; the panel then reopens where it was left.
+let lastPosition = { x: 0.03, y: 0.08 };
+
+const rememberPosition = () => {
+    const panel = document.querySelector(`.${styles.panel}`) as HTMLElement | null;
+    if (!panel) {
+        return;
+    }
+    const r = panel.getBoundingClientRect();
+    const freeX = window.innerWidth - r.width;
+    const freeY = window.innerHeight - r.height;
+    const fraction = (at: number, free: number) => Math.min(Math.max(at / free, 0), 1);
+    if (freeX > 0 && freeY > 0) {
+        lastPosition = { x: fraction(r.left, freeX), y: fraction(r.top, freeY) };
+    }
+};
+
+/** Top-left toolbar button that opens the Toll Plaza control panel (drag it by its title bar). */
 export const TollPanel = () => {
     const [open, setOpen] = useState(false);
+    const close = () => {
+        rememberPosition();
+        setOpen(false);
+    };
 
     const plazas = useValue(plazas$);
     const boothLanes = useValue(boothLanes$);
@@ -60,13 +116,15 @@ export const TollPanel = () => {
     const busRate = useValue(busRate$);
     const cashMph = useValue(cashMph$);
     const etcMph = useValue(etcMph$);
+    const months = useValue(months$);
+    const plazaList = useValue(plazaList$);
 
     return (
         <>
             <FloatingButton src={ICON} selected={open} tooltipLabel="Toll Plaza"
-                onSelect={() => setOpen(!open)} />
+                onSelect={() => (open ? close() : setOpen(true))} />
             {open && (
-                <Panel className={styles.panel} header="Toll Plaza" onClose={() => setOpen(false)}>
+                <Panel draggable initialPosition={lastPosition} className={styles.panel} header="Toll Plaza" onClose={close}>
                     <div className={styles.section}>
                         <div className={styles.heading}>Overview</div>
                         <Row label="Toll plazas" value={count(plazas)} />
@@ -74,7 +132,28 @@ export const TollPanel = () => {
                         <Row label="Revenue collected" value={revenue} />
                     </div>
                     <div className={styles.section}>
-                        <div className={styles.heading}>Vehicles charged</div>
+                        <div className={styles.heading}>All plazas — this month vs last</div>
+                        <MonthCompare stats={months} />
+                    </div>
+                    <div className={styles.section}>
+                        <div className={styles.heading}>Your toll plazas (click to go there)</div>
+                        {plazaList.length === 0 && <div className={styles.note}>No plazas with roads placed yet.</div>}
+                        {plazaList.map(p => (
+                            <Button key={`${p.entity.index}:${p.entity.version}`} variant="flat"
+                                className={styles.plazaLink} onSelect={() => goTo(p.entity)}>
+                                {/* Whole strings: the game's UI drops the spaces between JSX text pieces. */}
+                                <div className={styles.plazaLinkName}>
+                                    <span className={styles.label}>{`${p.name} (${p.lanes} booths)`}</span>
+                                    {p.outdated && <span className={styles.outdated}>Old layout: bulldoze and re-place</span>}
+                                </div>
+                                <span className={styles.value}>
+                                    {`${money(p.thisMonth.cents)} · ${countOf(p.thisMonth.cars + p.thisMonth.trucks + p.thisMonth.buses)} vehicles`}
+                                </span>
+                            </Button>
+                        ))}
+                    </div>
+                    <div className={styles.section}>
+                        <div className={styles.heading}>Vehicles charged (all time)</div>
                         <Row label="Cars" value={count(cars)} />
                         <Row label="Trucks" value={count(trucks)} />
                         <Row label="Buses" value={count(buses)} />
@@ -88,8 +167,8 @@ export const TollPanel = () => {
                     </div>
                     <div className={styles.section}>
                         <div className={styles.heading}>Lane speeds</div>
-                        <Row label="Cash lanes" value={`${cashMph} mph`} />
-                        <Row label="E-Toll lanes" value={`${etcMph} mph`} />
+                        <SpeedRow label="Cash lanes" id="cash" mph={cashMph} />
+                        <SpeedRow label="E-Toll lanes" id="etc" mph={etcMph} />
                     </div>
                 </Panel>
             )}

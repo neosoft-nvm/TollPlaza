@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using Game;
 using Game.City;
 using Game.Common;
@@ -21,16 +22,25 @@ namespace TollPlaza
         Exempt, // emergency and city service vehicles ride free, as on real toll roads
     }
 
-    /// <summary>Toll rates in cents and running totals; shared with the (upcoming) control panel.</summary>
+    /// <summary>Toll rates in cents and running totals; shared with the control panel and PlazaPersistence.</summary>
     public static class TollState
     {
-        public static int CarRateCents = 250;
-        public static int TruckRateCents = 600;
-        public static int BusRateCents = 400;
+        public const int DefaultCarRateCents = 250;
+        public const int DefaultTruckRateCents = 600;
+        public const int DefaultBusRateCents = 400;
+
+        public static int CarRateCents = DefaultCarRateCents;
+        public static int TruckRateCents = DefaultTruckRateCents;
+        public static int BusRateCents = DefaultBusRateCents;
+
+        /// <summary>Booth lane speed limits in mph, set from the control panel and applied lane by lane.</summary>
+        public static int CashMph = PlazaLayout.CashSpeedMph;
+        public static int EtcMph = PlazaLayout.EtcSpeedMph;
+        /// <summary>Speed at the end of the approach and on the exit: never below the faster booth lanes.</summary>
+        public static int ZoneMph => System.Math.Max(PlazaLayout.ZoneSpeedMph, System.Math.Max(CashMph, EtcMph));
 
         public static long RevenueCents;
         public static readonly Dictionary<VehicleClass, int> Vehicles = new Dictionary<VehicleClass, int>();
-        public static readonly Dictionary<Entity, (int vehicles, long cents)> PerPlaza = new Dictionary<Entity, (int, long)>();
 
         public static int RateCents(VehicleClass c)
         {
@@ -42,32 +52,90 @@ namespace TollPlaza
                 default: return CarRateCents;
             }
         }
+
+        public static int Count(VehicleClass c) => Vehicles.TryGetValue(c, out int n) ? n : 0;
+
+        /// <summary>Back to a new city's defaults (every city load starts here, then PlazaPersistence restores).</summary>
+        public static void Reset()
+        {
+            CarRateCents = DefaultCarRateCents;
+            TruckRateCents = DefaultTruckRateCents;
+            BusRateCents = DefaultBusRateCents;
+            CashMph = PlazaLayout.CashSpeedMph;
+            EtcMph = PlazaLayout.EtcSpeedMph;
+            RevenueCents = 0;
+            Vehicles.Clear();
+        }
     }
 
     /// <summary>
     /// Charges every vehicle that drives through a plaza's toll lanes and credits the city.
-    /// Toll lanes are the edges built from the plaza's own lane roads ("TollPlaza Cash Lane" /
-    /// "TollPlaza E-Toll Lane"). Rather than scanning every car in the city, it reads the vehicle list
-    /// each of those lanes keeps (LaneObject buffer). A vehicle pays once per plaza visit: it's
-    /// remembered while it stays on that plaza's toll lanes and forgotten a few seconds after leaving.
+    /// Toll lanes are the car lanes of the plaza's own road (approach, booths and exit). Every few frames it
+    /// checks each car's current lane against them. A vehicle pays once per plaza visit, the first time it's
+    /// seen there; it's counted for a booth when it reaches the booth lanes. It's remembered while it stays on
+    /// that plaza's lanes and forgotten a few seconds after leaving.
     /// Money is added on the main thread through EntityManager, the way the game pays milestone rewards,
     /// so no scheduled job can overwrite it.
     /// </summary>
     public partial class TollCollectionSystem : GameSystemBase
     {
-        private const int UpdateInterval = 16;          // simulation frames between updates
-        private const int ForgetAfterUpdates = 40;      // ~10 s of game time off the toll lanes
-        private const int RefreshEdgesEveryUpdates = 16;
+        // Checked often enough that no vehicle crosses the plaza between two looks, even at E-Toll speed.
+        private const int UpdateInterval = 4;           // simulation frames between updates
+        private const int ForgetAfterUpdates = 160;     // ~10 s of game time off the plaza's road
+        private const int RefreshEdgesEveryUpdates = 64;
+        // Vehicles already inside a plaza when a city loads were never seen paying; the exit check skips them.
+        private const int SettleAfterLoadUpdates = 60;
+
+        /// <summary>
+        /// Lane speed limit (m/s, as CarLane.m_SpeedLimit stores it) for a speed in mph as players read it.
+        /// Lanes run at twice the speed the game shows (the base game's highways log as 66.7 m/s, 149 mph,
+        /// for a road signed half that), so the booth and zone speeds are doubled to match the player's roads.
+        /// </summary>
+        public static float LaneSpeed(float mph) => mph * MphToMps * GameSpeedScale;
+        public static float ShownMph(float laneSpeed) => laneSpeed / (MphToMps * GameSpeedScale);
+        private const float MphToMps = 0.44704f;
+        private const float GameSpeedScale = 2f;
+
+        // Braking probe: the game moves cars in 16-frame steps (4/15 s), so speed is compared over at least that.
+        private const float SimFramesPerSecond = 60f;
+        private const int SpeedWindowUpdates = 4;
+        /// <summary>Peak deceleration above this counts as hard braking (about 0.6 g; the cars' limit is ~1 g).</summary>
+        private const float HardBrakingMps2 = 6f;
 
         private CitySystem m_CitySystem;
+        private TimeSystem m_TimeSystem;
         private PrefabSystem m_PrefabSystem;
         private EntityQuery m_EdgeQuery;
+        private EntityQuery m_CarQuery;
 
-        private readonly List<(Entity edge, Entity plaza)> m_TollEdges = new List<(Entity, Entity)>();
-        private readonly Dictionary<(Entity vehicle, Entity plaza), int> m_LastSeen = new Dictionary<(Entity, Entity), int>();
+        private readonly List<(Entity edge, Entity plaza, bool booths)> m_TollEdges = new List<(Entity, Entity, bool)>();
+        private readonly Dictionary<Entity, (Entity plaza, int booth, bool boothLane, bool pastBooths)> m_PlazaLanes =
+            new Dictionary<Entity, (Entity, int, bool, bool)>();
+
+        /// <summary>One vehicle's pass through one plaza.</summary>
+        private struct Pass
+        {
+            public int LastSeen;
+            public VehicleClass Class;
+            public int Cents;
+            public bool Charged;
+            // Braking probe
+            public float SpeedAt;
+            public int SpeedTick;
+            public float PeakDecel;
+            public bool Measured;
+            public bool StopLogged;
+        }
+
+        private readonly Dictionary<(Entity vehicle, Entity plaza), Pass> m_Passes = new Dictionary<(Entity, Entity), Pass>();
         private int m_Tick;
         private int m_PendingCents;
+        private (long, int, int) m_LastLogged = (-1, -1, -1);
         private readonly HashSet<Entity> m_TollRoadPrefabs = new HashSet<Entity>();
+
+        // Braking probe totals since the last summary line.
+        private int m_BrakePasses, m_HardBrakePasses;
+        private float m_BrakePeakSum, m_BrakePeakMax;
 
         public override int GetUpdateInterval(SystemUpdatePhase phase) => UpdateInterval;
 
@@ -75,6 +143,7 @@ namespace TollPlaza
         {
             base.OnCreate();
             m_CitySystem = World.GetOrCreateSystemManaged<CitySystem>();
+            m_TimeSystem = World.GetOrCreateSystemManaged<TimeSystem>();
             m_PrefabSystem = World.GetOrCreateSystemManaged<PrefabSystem>();
             m_EdgeQuery = GetEntityQuery(
                 ComponentType.ReadOnly<Edge>(),
@@ -82,6 +151,32 @@ namespace TollPlaza
                 ComponentType.ReadOnly<Game.Net.SubLane>(),
                 ComponentType.Exclude<Deleted>(),
                 ComponentType.Exclude<Temp>());
+            // Trailers ride on their own lane component, so the truck pulling one is the one charged.
+            m_CarQuery = GetEntityQuery(
+                ComponentType.ReadOnly<Game.Vehicles.CarCurrentLane>(),
+                ComponentType.Exclude<Deleted>(),
+                ComponentType.Exclude<Temp>());
+        }
+
+        /// <summary>Forgets everything about the previous city (entities are renumbered on every load).</summary>
+        public void ResetForNewCity()
+        {
+            m_TollEdges.Clear();
+            m_PlazaLanes.Clear();
+            m_Passes.Clear();
+            m_ExitLanes.Clear();
+            m_ExitSeen.Clear();
+            m_EntrySpeeds.Clear();
+            m_LoggedApproach.Clear();
+            m_Layouts.Clear();
+            m_Tick = 0;
+            m_PendingCents = 0;
+            m_ExitTotal = m_ExitMissed = 0;
+            m_LastLogged = (-1, -1, -1);
+            m_BrakePasses = m_HardBrakePasses = 0;
+            m_BrakePeakSum = m_BrakePeakMax = 0f;
+            m_StopPlaces.Clear();
+            m_StopDetailsLogged = 0;
         }
 
         protected override void OnUpdate()
@@ -95,37 +190,89 @@ namespace TollPlaza
             if (m_Tick % RefreshEdgesEveryUpdates == 1 || m_TollEdges.Count == 0)
             {
                 RefreshTollEdges();
+                FindPlazaEnds();
             }
 
-            foreach ((Entity edge, Entity plaza) in m_TollEdges)
+            // The plaza's car lanes (which plaza, which booth), with the lane speeds re-applied in case the
+            // game recalculates them.
+            m_PlazaLanes.Clear();
+            foreach ((Entity edge, Entity plaza, bool booths) in m_TollEdges)
             {
                 if (!EntityManager.Exists(edge) || !EntityManager.HasBuffer<Game.Net.SubLane>(edge))
                 {
                     continue;
                 }
-                DynamicBuffer<Game.Net.SubLane> subLanes = EntityManager.GetBuffer<Game.Net.SubLane>(edge, isReadOnly: true);
-                for (int i = 0; i < subLanes.Length; i++)
+                AddPlazaLanes(edge, plaza, booths);
+                // The joints between the plaza's pieces have lanes of their own (a car crossing a joint is on
+                // the node, not an edge).
+                Edge e = EntityManager.GetComponentData<Edge>(edge);
+                AddPlazaLanes(e.m_Start, plaza, false);
+                AddPlazaLanes(e.m_End, plaza, false);
+            }
+
+            // Every car in the city knows the lane it's on: whoever is on a plaza lane pays (once per pass).
+            // The lanes' own vehicle lists missed fast cars, so they're not used.
+            if (m_PlazaLanes.Count > 0)
+            {
+                System.DateTime date = m_TimeSystem.GetCurrentDateTime();
+                int month = date.Year * 12 + date.Month;
+                using (NativeArray<Entity> vehicles = m_CarQuery.ToEntityArray(Allocator.Temp))
+                using (NativeArray<Game.Vehicles.CarCurrentLane> current = m_CarQuery.ToComponentDataArray<Game.Vehicles.CarCurrentLane>(Allocator.Temp))
                 {
-                    Entity lane = subLanes[i].m_SubLane;
-                    if (!EntityManager.HasComponent<Game.Net.CarLane>(lane) || !EntityManager.HasBuffer<LaneObject>(lane))
+                    for (int j = 0; j < vehicles.Length; j++)
                     {
-                        continue;
+                        if (!m_PlazaLanes.TryGetValue(current[j].m_Lane, out var at)
+                            && !m_PlazaLanes.TryGetValue(current[j].m_ChangeLane, out at))
+                        {
+                            continue;
+                        }
+                        var key = (vehicles[j], at.plaza);
+                        m_Passes.TryGetValue(key, out Pass pass);
+                        // Charged at the booth it drives through, like a real plaza, so the plaza's count always
+                        // matches its booths' (cars still queuing on the approach aren't counted yet). A vehicle
+                        // first seen past the booths (the plaza was placed around it) pays there instead.
+                        if (!pass.Charged && (at.boothLane || at.pastBooths))
+                        {
+                            Charge(vehicles[j], at.plaza, month, ref pass);
+                            if (at.boothLane && at.booth >= 0)
+                            {
+                                PlazaStats booth = PlazaStats.Of(at.plaza).Booth(at.booth);
+                                booth.Roll(month);
+                                booth.ThisMonth.Add(pass.Class, pass.Cents);
+                            }
+                        }
+                        MeasureBraking(vehicles[j], at.plaza, ref pass);
+                        pass.LastSeen = m_Tick;
+                        m_Passes[key] = pass;
                     }
-                    ApplyLaneSpeed(lane, plaza);
-                    DynamicBuffer<LaneObject> objects = EntityManager.GetBuffer<LaneObject>(lane, isReadOnly: true);
-                    for (int j = 0; j < objects.Length; j++)
+
+                    // Check: every vehicle leaving on the player's road past the exit should have paid.
+                    for (int j = 0; j < vehicles.Length; j++)
                     {
-                        Entity vehicle = objects[j].m_LaneObject;
-                        if (EntityManager.HasComponent<Game.Vehicles.CarTrailer>(vehicle))
+                        if (!m_ExitLanes.TryGetValue(current[j].m_Lane, out Entity plaza))
                         {
-                            continue; // the truck pulling it pays
+                            continue;
                         }
-                        var key = (vehicle, plaza);
-                        if (!m_LastSeen.ContainsKey(key))
+                        var key = (vehicles[j], plaza);
+                        if (m_ExitSeen.ContainsKey(key))
                         {
-                            Charge(vehicle, plaza);
+                            m_ExitSeen[key] = m_Tick;
+                            continue;
                         }
-                        m_LastSeen[key] = m_Tick;
+                        m_ExitSeen[key] = m_Tick;
+                        if (m_Tick <= SettleAfterLoadUpdates)
+                        {
+                            continue;
+                        }
+                        m_ExitTotal++;
+                        if (!m_Passes.TryGetValue(key, out Pass paid) || !paid.Charged)
+                        {
+                            m_ExitMissed++;
+                            if (m_ExitMissed <= 8)
+                            {
+                                LogMissed(vehicles[j], plaza);
+                            }
+                        }
                     }
                 }
             }
@@ -133,16 +280,310 @@ namespace TollPlaza
             Forget();
             PayCity();
 
-            if (m_Tick % 240 == 0)
+            // Logged whenever tolls or toll lanes change (at most every ~4 s), so a test shows money coming in.
+            var summary = (TollState.RevenueCents, m_TollEdges.Count, m_ExitTotal);
+            if (m_Tick % 64 == 0 && summary != m_LastLogged)
             {
+                m_LastLogged = summary;
                 Mod.Log.Info($"[TollPlaza] Tolls so far: ${TollState.RevenueCents / 100.0:F2} from "
-                    + $"{Count(VehicleClass.Car)} cars, {Count(VehicleClass.Truck)} trucks, "
-                    + $"{Count(VehicleClass.Bus)} buses, {Count(VehicleClass.Exempt)} exempt; "
-                    + $"{m_TollEdges.Count} toll lane segments");
+                    + $"{TollState.Count(VehicleClass.Car)} cars, {TollState.Count(VehicleClass.Truck)} trucks, "
+                    + $"{TollState.Count(VehicleClass.Bus)} buses, {TollState.Count(VehicleClass.Exempt)} exempt; "
+                    + $"{m_TollEdges.Count} toll lane segments; city money ${EntityManager.GetComponentData<PlayerMoney>(m_CitySystem.City).money}; "
+                    + $"check: {m_ExitTotal} vehicles left past the exits, {m_ExitMissed} of them unpaid");
+                if (m_BrakePasses > 0)
+                {
+                    Mod.Log.Info($"[TollPlaza] Braking in plazas: {m_BrakePasses} passes, peak deceleration avg "
+                        + $"{m_BrakePeakSum / m_BrakePasses:F1} m/s2, max {m_BrakePeakMax:F1} m/s2, "
+                        + $"{100f * m_HardBrakePasses / m_BrakePasses:F0}% braked harder than {HardBrakingMps2:F0} m/s2");
+                    m_BrakePasses = m_HardBrakePasses = 0;
+                    m_BrakePeakSum = m_BrakePeakMax = 0f;
+                }
+                if (m_StopPlaces.Count > 0)
+                {
+                    Mod.Log.Info("[TollPlaza] Hard stops and reversing by place: "
+                        + string.Join(", ", m_StopPlaces.OrderByDescending(p => p.Value).Select(p => $"{p.Key} {p.Value}")));
+                    m_StopPlaces.Clear();
+                    m_StopDetailsLogged = 0;
+                }
             }
         }
 
-        private static int Count(VehicleClass c) => TollState.Vehicles.TryGetValue(c, out int n) ? n : 0;
+        // Stop probe: where in the plaza cars brake hard or reverse, and what they were waiting for.
+        private const int StopDetailsPerSummary = 6;
+        private readonly Dictionary<string, int> m_StopPlaces = new Dictionary<string, int>();
+        private int m_StopDetailsLogged;
+
+        /// <summary>
+        /// Tracks a vehicle's hardest braking while it's in the plaza (speed drop per game second), and logs
+        /// where hard stops and reversing happen. Speed is signed along the car's heading, so backing up counts.
+        /// </summary>
+        private void MeasureBraking(Entity vehicle, Entity plaza, ref Pass pass)
+        {
+            if (!EntityManager.HasComponent<Game.Objects.Moving>(vehicle) || !EntityManager.HasComponent<Game.Objects.Transform>(vehicle))
+            {
+                return;
+            }
+            Game.Objects.Transform transform = EntityManager.GetComponentData<Game.Objects.Transform>(vehicle);
+            float3 velocity = EntityManager.GetComponentData<Game.Objects.Moving>(vehicle).m_Velocity;
+            float speed = math.dot(velocity, math.forward(transform.m_Rotation));
+            bool reversing = speed < -0.5f;
+            if (pass.SpeedTick == 0)
+            {
+                pass.SpeedAt = speed;
+                pass.SpeedTick = m_Tick;
+                return;
+            }
+            int updates = m_Tick - pass.SpeedTick;
+            if (updates < SpeedWindowUpdates && !reversing)
+            {
+                return;
+            }
+            float decel = 0f;
+            if (updates >= SpeedWindowUpdates && updates <= SpeedWindowUpdates * 2)
+            {
+                float seconds = updates * UpdateInterval / SimFramesPerSecond;
+                decel = (pass.SpeedAt - speed) / seconds;
+                pass.PeakDecel = math.max(pass.PeakDecel, decel);
+                pass.Measured = true;
+            }
+            if ((decel > HardBrakingMps2 || reversing) && !pass.StopLogged)
+            {
+                pass.StopLogged = true;
+                LogStop(vehicle, plaza, transform, pass.SpeedAt, speed, reversing);
+            }
+            if (updates >= SpeedWindowUpdates)
+            {
+                pass.SpeedAt = speed;
+                pass.SpeedTick = m_Tick;
+            }
+        }
+
+        private void LogStop(Entity vehicle, Entity plaza, Game.Objects.Transform transform, float before, float after, bool reversing)
+        {
+            PlazaLayout layout = LayoutOf(plaza);
+            string place = "unknown";
+            float3 local = default;
+            if (layout != null && EntityManager.HasComponent<Game.Objects.Transform>(plaza))
+            {
+                Game.Objects.Transform t = EntityManager.GetComponentData<Game.Objects.Transform>(plaza);
+                local = math.mul(math.inverse(t.m_Rotation), transform.m_Position - t.m_Position);
+                place = PlaceOf(layout, local.z);
+            }
+            string key = place + (reversing ? " (reversing)" : string.Empty);
+            m_StopPlaces.TryGetValue(key, out int n);
+            m_StopPlaces[key] = n + 1;
+            if (m_StopDetailsLogged >= StopDetailsPerSummary)
+            {
+                return;
+            }
+            m_StopDetailsLogged++;
+
+            string blocker = "nothing";
+            if (EntityManager.HasComponent<Game.Vehicles.Blocker>(vehicle))
+            {
+                Game.Vehicles.Blocker b = EntityManager.GetComponentData<Game.Vehicles.Blocker>(vehicle);
+                if (b.m_Type != Game.Vehicles.BlockerType.None || b.m_Blocker != Entity.Null)
+                {
+                    blocker = $"{b.m_Type} by {NameOf(b.m_Blocker)} (max speed {b.m_MaxSpeed})";
+                }
+            }
+            string lanes = "?";
+            if (EntityManager.HasComponent<Game.Vehicles.CarCurrentLane>(vehicle))
+            {
+                Game.Vehicles.CarCurrentLane lane = EntityManager.GetComponentData<Game.Vehicles.CarCurrentLane>(vehicle);
+                lanes = $"lane {OwnerName(lane.m_Lane)}"
+                    + (lane.m_ChangeLane != Entity.Null ? $", changing to {OwnerName(lane.m_ChangeLane)} ({lane.m_ChangeProgress:F2})" : string.Empty)
+                    + $", flags {lane.m_LaneFlags}";
+            }
+            Mod.Log.Info($"[TollPlaza] Hard stop: {NameOf(vehicle)} at {place}, plaza-local x {local.x:F1} z {local.z:F1}, "
+                + $"speed {ShownMph(before):F0} > {ShownMph(after):F0} mph{(reversing ? ", REVERSING" : string.Empty)}; "
+                + $"blocked: {blocker}; {lanes}");
+        }
+
+        /// <summary>Which part of the plaza a plaza-local Z falls in.</summary>
+        private static string PlaceOf(PlazaLayout layout, float z)
+        {
+            if (z < layout.ApproachStartZ) return "before the plaza";
+            if (z < layout.ChannelStartZ)
+            {
+                int piece = (int)((z - layout.ApproachStartZ) / (PlazaLayout.ApproachLength / PlazaLayout.ApproachPieces));
+                return $"approach step {piece + 1}";
+            }
+            if (z < layout.IslandStartZ) return "channel";
+            if (z < layout.IslandEndZ) return "booths";
+            if (z < layout.IslandEndZ + PlazaLayout.ExitLength) return "exit";
+            return "after the plaza";
+        }
+
+        private string NameOf(Entity entity)
+        {
+            if (entity == Entity.Null || !EntityManager.Exists(entity))
+            {
+                return "none";
+            }
+            return EntityManager.HasComponent<PrefabRef>(entity)
+                && m_PrefabSystem.TryGetPrefab(EntityManager.GetComponentData<PrefabRef>(entity), out PrefabBase p)
+                ? p.name : entity.ToString();
+        }
+
+        /// <summary>A lane's road piece (edge or node prefab name), for the stop probe.</summary>
+        private string OwnerName(Entity lane)
+        {
+            if (lane == Entity.Null || !EntityManager.Exists(lane))
+            {
+                return "none";
+            }
+            Entity owner = EntityManager.HasComponent<Owner>(lane) ? EntityManager.GetComponentData<Owner>(lane).m_Owner : Entity.Null;
+            string kind = owner != Entity.Null && EntityManager.HasComponent<Node>(owner) ? "node of " : string.Empty;
+            if (owner != Entity.Null && EntityManager.HasComponent<Node>(owner) && EntityManager.HasBuffer<ConnectedEdge>(owner))
+            {
+                DynamicBuffer<ConnectedEdge> edges = EntityManager.GetBuffer<ConnectedEdge>(owner, isReadOnly: true);
+                return kind + string.Join(" + ", Enumerable.Range(0, edges.Length).Select(i => NameOf(edges[i].m_Edge)));
+            }
+            return NameOf(owner);
+        }
+
+        /// <param name="booths">The island piece (booth speeds); otherwise the approach or zone speed applies.</param>
+        private void AddPlazaLanes(Entity owner, Entity plaza, bool booths)
+        {
+            if (!EntityManager.HasBuffer<Game.Net.SubLane>(owner))
+            {
+                return;
+            }
+            DynamicBuffer<Game.Net.SubLane> subLanes = EntityManager.GetBuffer<Game.Net.SubLane>(owner, isReadOnly: true);
+            for (int i = 0; i < subLanes.Length; i++)
+            {
+                Entity lane = subLanes[i].m_SubLane;
+                if (!m_PlazaLanes.ContainsKey(lane) && EntityManager.HasComponent<Game.Net.CarLane>(lane))
+                {
+                    int booth = BoothOf(lane, plaza, booths, out bool pastBooths);
+                    m_PlazaLanes[lane] = (plaza, booth, booths, pastBooths);
+                }
+            }
+        }
+
+        // Diagnostics: the player's road just past each plaza exit, and who drove out on it.
+        private readonly Dictionary<Entity, Entity> m_ExitLanes = new Dictionary<Entity, Entity>();
+        private readonly Dictionary<(Entity, Entity), int> m_ExitSeen = new Dictionary<(Entity, Entity), int>();
+        private int m_ExitTotal, m_ExitMissed;
+
+        /// <summary>Speed limit (m/s) of the player's road coming into each plaza; the approach steps down from it.</summary>
+        private readonly Dictionary<Entity, float> m_EntrySpeeds = new Dictionary<Entity, float>();
+        private readonly Dictionary<Entity, float> m_LoggedApproach = new Dictionary<Entity, float>();
+
+        private void LogMissed(Entity vehicle, Entity plaza)
+        {
+            var types = new List<string>();
+            using (NativeArray<ComponentType> components = EntityManager.GetComponentTypes(vehicle, Allocator.Temp))
+            {
+                foreach (ComponentType c in components)
+                {
+                    string n = c.GetManagedType()?.Name;
+                    if (n != null && !n.StartsWith("Interpolated") && !n.StartsWith("Culling"))
+                    {
+                        types.Add(n);
+                    }
+                }
+            }
+            string prefab = EntityManager.HasComponent<PrefabRef>(vehicle)
+                && m_PrefabSystem.TryGetPrefab(EntityManager.GetComponentData<PrefabRef>(vehicle), out PrefabBase p) ? p.name : "?";
+            Mod.Log.Info($"[TollPlaza] Unpaid vehicle {vehicle} ({prefab}) leaving plaza {plaza}: {string.Join(", ", types)}");
+        }
+
+        /// <summary>
+        /// The player's roads joined to each plaza: car lanes past the exit end (plaza-local +Z) for the paid
+        /// check, and the fastest car lane into the approach end for the approach speed steps.
+        /// </summary>
+        private void FindPlazaEnds()
+        {
+            m_ExitLanes.Clear();
+            m_EntrySpeeds.Clear();
+            foreach ((Entity edge, Entity plaza, bool booths) in m_TollEdges)
+            {
+                if (!EntityManager.HasComponent<Edge>(edge) || !EntityManager.HasComponent<Game.Objects.Transform>(plaza))
+                {
+                    continue;
+                }
+                Game.Objects.Transform t = EntityManager.GetComponentData<Game.Objects.Transform>(plaza);
+                Edge e = EntityManager.GetComponentData<Edge>(edge);
+                foreach (Entity node in new[] { e.m_Start, e.m_End })
+                {
+                    if (!EntityManager.HasBuffer<ConnectedEdge>(node) || !EntityManager.HasComponent<Node>(node))
+                    {
+                        continue;
+                    }
+                    float3 local = math.mul(math.inverse(t.m_Rotation), EntityManager.GetComponentData<Node>(node).m_Position - t.m_Position);
+                    bool exit = local.z > 0f;
+                    DynamicBuffer<ConnectedEdge> connected = EntityManager.GetBuffer<ConnectedEdge>(node, isReadOnly: true);
+                    for (int i = 0; i < connected.Length; i++)
+                    {
+                        Entity other = connected[i].m_Edge;
+                        if (OwnerOf(other) == plaza || !EntityManager.HasBuffer<Game.Net.SubLane>(other))
+                        {
+                            continue;
+                        }
+                        DynamicBuffer<Game.Net.SubLane> lanes = EntityManager.GetBuffer<Game.Net.SubLane>(other, isReadOnly: true);
+                        for (int l = 0; l < lanes.Length; l++)
+                        {
+                            Entity lane = lanes[l].m_SubLane;
+                            if (!EntityManager.HasComponent<Game.Net.CarLane>(lane))
+                            {
+                                continue;
+                            }
+                            if (exit)
+                            {
+                                m_ExitLanes[lane] = plaza;
+                            }
+                            else
+                            {
+                                float limit = EntityManager.GetComponentData<Game.Net.CarLane>(lane).m_SpeedLimit;
+                                m_EntrySpeeds.TryGetValue(plaza, out float fastest);
+                                m_EntrySpeeds[plaza] = math.max(fastest, limit);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Speed limit (m/s) of an approach lane at plaza-local <paramref name="z"/>. The approach is
+        /// StepPieces pieces before the channel; their limits fall in even steps of speed squared, a steady
+        /// deceleration, from just under the entry road's limit to the zone speed on the last piece before the
+        /// channel (the channel and islands run at the booth speeds). The game's cars brake as late and as hard
+        /// as they can for each step, but each step is small.
+        /// </summary>
+        private float ApproachSpeed(Entity plaza, PlazaLayout layout, float z)
+        {
+            float zone = LaneSpeed(TollState.ZoneMph);
+            if (z >= layout.ChannelStartZ || !m_EntrySpeeds.TryGetValue(plaza, out float entry) || entry <= zone)
+            {
+                return zone;
+            }
+            int n = PlazaLayout.StepPieces;
+            float along = (z - layout.ApproachStartZ) / (layout.ChannelStartZ - layout.ApproachStartZ);
+            int piece = math.clamp((int)math.floor(along * n), 0, n - 1);
+            float speed = StepSpeed(entry, zone, piece, n);
+
+            if (!m_LoggedApproach.TryGetValue(plaza, out float logged) || math.abs(logged - entry) > 0.1f)
+            {
+                m_LoggedApproach[plaza] = entry;
+                var steps = new List<string>();
+                for (int i = 0; i < n; i++)
+                {
+                    steps.Add(ShownMph(StepSpeed(entry, zone, i, n)).ToString("F0"));
+                }
+                Mod.Log.Info($"[TollPlaza] Plaza {plaza} approach from {ShownMph(entry):F0} mph: "
+                    + string.Join(" > ", steps) + $" mph, then booths {TollState.EtcMph}/{TollState.CashMph} mph");
+            }
+            return speed;
+        }
+
+        private static float StepSpeed(float entry, float zone, int piece, int pieces)
+        {
+            float remaining = (pieces - 1 - piece) / (float)pieces;
+            return math.sqrt(zone * zone + (entry * entry - zone * zone) * remaining);
+        }
 
         private bool ResolveLanePrefabs()
         {
@@ -159,20 +600,24 @@ namespace TollPlaza
         }
 
         /// <summary>
-        /// The plaza highway runs at the E-Toll speed; cash lanes are slowed here, lane by lane. A lane is a
-        /// cash lane when its center, in the plaza's own coordinates, is nearest a cash lane of the layout.
-        /// Re-applied every update in case the game recalculates lane speeds.
+        /// Sets a plaza lane's speed limit (booth speed on the island piece, the approach steps before it, the
+        /// zone speed after) and finds its booth. A lane belongs to the booth whose lane center, in the plaza's
+        /// own coordinates, is nearest. Re-applied every update in case the game recalculates lane speeds.
         /// </summary>
-        private void ApplyLaneSpeed(Entity lane, Entity plaza)
+        /// <returns>The booth lane index (0 = leftmost), or -1 if unknown.</returns>
+        /// <param name="pastBooths">Set for a lane after the booths (the exit and its joints).</param>
+        private int BoothOf(Entity lane, Entity plaza, bool boothSpeed, out bool pastBooths)
         {
+            pastBooths = false;
             PlazaLayout layout = LayoutOf(plaza);
             if (layout == null || !EntityManager.HasComponent<Curve>(lane) || !EntityManager.HasComponent<Game.Objects.Transform>(plaza))
             {
-                return;
+                return -1;
             }
             Game.Objects.Transform t = EntityManager.GetComponentData<Game.Objects.Transform>(plaza);
             float3 mid = MathUtils.Position(EntityManager.GetComponentData<Curve>(lane).m_Bezier, 0.5f);
             float3 local = math.mul(math.inverse(t.m_Rotation), mid - t.m_Position);
+            pastBooths = !boothSpeed && local.z > layout.IslandStartZ;
 
             int nearest = 0;
             for (int i = 1; i < layout.LaneCount; i++)
@@ -182,8 +627,11 @@ namespace TollPlaza
                     nearest = i;
                 }
             }
-            float mph = layout.IsCashLane(nearest) ? PlazaLayout.CashSpeedMph : PlazaLayout.EtcSpeedMph;
-            float metersPerSecond = mph * 0.44704f;
+            // Booth lanes get their booth's speed; the approach steps down to the zone speed (see
+            // ApproachSpeed), and the exit and its joints stay at the zone speed.
+            float metersPerSecond = boothSpeed
+                ? LaneSpeed(PlazaStats.IsCashLane(plaza, layout, nearest) ? TollState.CashMph : TollState.EtcMph)
+                : ApproachSpeed(plaza, layout, local.z);
 
             Game.Net.CarLane carLane = EntityManager.GetComponentData<Game.Net.CarLane>(lane);
             if (math.abs(carLane.m_SpeedLimit - metersPerSecond) > 0.01f)
@@ -191,6 +639,7 @@ namespace TollPlaza
                 carLane.m_SpeedLimit = metersPerSecond;
                 EntityManager.SetComponentData(lane, carLane);
             }
+            return nearest;
         }
 
         private readonly Dictionary<Entity, PlazaLayout> m_Layouts = new Dictionary<Entity, PlazaLayout>();
@@ -217,36 +666,52 @@ namespace TollPlaza
             using (NativeArray<Entity> edges = m_EdgeQuery.ToEntityArray(Allocator.Temp))
             using (NativeArray<PrefabRef> prefabs = m_EdgeQuery.ToComponentDataArray<PrefabRef>(Allocator.Temp))
             {
+                // The booth pieces first (they identify the plazas), then every other piece of those plazas'
+                // own road (approach and exit), so a vehicle is seen somewhere along the whole plaza. It still
+                // pays once per pass.
+                var plazas = new HashSet<Entity>();
                 for (int i = 0; i < edges.Length; i++)
                 {
-                    Entity prefab = prefabs[i].m_Prefab;
-                    if (!m_TollRoadPrefabs.Contains(prefab))
+                    if (m_TollRoadPrefabs.Contains(prefabs[i].m_Prefab))
                     {
-                        continue;
+                        Entity plaza = OwnerOf(edges[i]);
+                        plazas.Add(plaza);
+                        m_TollEdges.Add((edges[i], plaza, true));
                     }
-                    // The plaza object owns its sub-net edges; group stats by plaza.
-                    Entity plaza = EntityManager.HasComponent<Owner>(edges[i])
-                        ? EntityManager.GetComponentData<Owner>(edges[i]).m_Owner
-                        : edges[i];
-                    m_TollEdges.Add((edges[i], plaza));
+                }
+                for (int i = 0; i < edges.Length; i++)
+                {
+                    if (!m_TollRoadPrefabs.Contains(prefabs[i].m_Prefab) && plazas.Contains(OwnerOf(edges[i])))
+                    {
+                        m_TollEdges.Add((edges[i], OwnerOf(edges[i]), false));
+                    }
                 }
             }
         }
 
-        private void Charge(Entity vehicle, Entity plaza)
+        private Entity OwnerOf(Entity edge) =>
+            EntityManager.HasComponent<Owner>(edge) ? EntityManager.GetComponentData<Owner>(edge).m_Owner : edge;
+
+        /// <summary>Charges a vehicle at a plaza's booth and counts it for the plaza and the city.</summary>
+        private void Charge(Entity vehicle, Entity plaza, int month, ref Pass pass)
         {
             VehicleClass cls = Classify(vehicle);
             int cents = TollState.RateCents(cls);
-            TollState.Vehicles.TryGetValue(cls, out int count);
-            TollState.Vehicles[cls] = count + 1;
-            if (cents <= 0)
+            TollState.Vehicles[cls] = TollState.Count(cls) + 1;
+
+            foreach (PlazaStats monthly in new[] { PlazaStats.Of(plaza), PlazaStats.City })
             {
-                return;
+                monthly.Roll(month);
+                monthly.ThisMonth.Add(cls, cents);
             }
-            TollState.RevenueCents += cents;
-            m_PendingCents += cents;
-            TollState.PerPlaza.TryGetValue(plaza, out var stats);
-            TollState.PerPlaza[plaza] = (stats.vehicles + 1, stats.cents + cents);
+            if (cents > 0)
+            {
+                TollState.RevenueCents += cents;
+                m_PendingCents += cents;
+            }
+            pass.Class = cls;
+            pass.Cents = cents;
+            pass.Charged = true;
         }
 
         private VehicleClass Classify(Entity vehicle)
@@ -278,7 +743,30 @@ namespace TollPlaza
         private void Forget()
         {
             m_ToForget.Clear();
-            foreach (var entry in m_LastSeen)
+            foreach (var entry in m_Passes)
+            {
+                if (m_Tick - entry.Value.LastSeen > ForgetAfterUpdates)
+                {
+                    m_ToForget.Add(entry.Key);
+                }
+            }
+            foreach (var key in m_ToForget)
+            {
+                Pass pass = m_Passes[key];
+                if (pass.Measured)
+                {
+                    m_BrakePasses++;
+                    m_BrakePeakSum += pass.PeakDecel;
+                    m_BrakePeakMax = math.max(m_BrakePeakMax, pass.PeakDecel);
+                    if (pass.PeakDecel > HardBrakingMps2)
+                    {
+                        m_HardBrakePasses++;
+                    }
+                }
+                m_Passes.Remove(key);
+            }
+            m_ToForget.Clear();
+            foreach (var entry in m_ExitSeen)
             {
                 if (m_Tick - entry.Value > ForgetAfterUpdates)
                 {
@@ -287,7 +775,7 @@ namespace TollPlaza
             }
             foreach (var key in m_ToForget)
             {
-                m_LastSeen.Remove(key);
+                m_ExitSeen.Remove(key);
             }
         }
 

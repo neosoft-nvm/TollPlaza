@@ -25,3 +25,6 @@ textures/src/**/*Opacity*
 
 # Generated preview textures (embedded in plaza.html)
 preview/textures/
+
+# In-game test screenshots (large, local only)
+screenshots/

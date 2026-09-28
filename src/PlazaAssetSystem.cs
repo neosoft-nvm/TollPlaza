@@ -65,21 +65,30 @@ namespace TollPlaza
                 Mod.Log.Warn("[TollPlaza] 'RoadsServices' category not found - prefabs will register but won't show in a menu.");
             }
 
-            // Measure the game's highways first: the islands must sit exactly on their lane lines.
-            var plazaHighways = new Dictionary<int, NetPrefab>();
+            // Compose and measure the plaza highways first: the islands must sit exactly on their medians.
+            // Per booth count: the island piece, and the ends, which are the base game's one-way highway with
+            // the same lane count, so the player's matching highway connects straight on.
+            var plazaHighways = new Dictionary<(int lanes, RoadPiece kind), NetPrefab>();
             try
             {
-                PlazaRoad.MeasureHighways(prefabSystem, EntityManager);
+                foreach (var plaza in PlazaCatalog.Plazas)
+                {
+                    foreach (int lanes in plaza.layout.RoadGroups)
+                    {
+                        if (plazaHighways.ContainsKey((lanes, RoadPiece.Islands)))
+                        {
+                            continue;
+                        }
+                        plazaHighways[(lanes, RoadPiece.Islands)] = PlazaRoad.CreatePlazaHighway(prefabSystem, EntityManager, lanes, true);
+                        // A nameless copy of the N-lane one-way highway (or composed when the game has none).
+                        NetPrefab end = PlazaRoad.CreatePlazaHighway(prefabSystem, EntityManager, lanes, false);
+                        plazaHighways[(lanes, RoadPiece.End)] = end;
+                        Mod.Log.Info($"[TollPlaza] {lanes}-booth plaza ends: {end?.name ?? "none"}");
+                    }
+                }
                 foreach (var plaza in PlazaCatalog.Plazas)
                 {
                     plaza.layout.Invalidate();
-                    foreach (int lanes in plaza.layout.RoadGroups)
-                    {
-                        if (!plazaHighways.ContainsKey(lanes))
-                        {
-                            plazaHighways[lanes] = PlazaRoad.CreatePlazaHighway(prefabSystem, EntityManager, lanes);
-                        }
-                    }
                 }
             }
             catch (Exception e)
@@ -108,7 +117,7 @@ namespace TollPlaza
                     // The working version carries its own highway through the booths; the decorative one is the
                     // same model without a road, to place anywhere.
                     ObjectSubNetInfo[] roads = PlazaRoad.Build(plaza.layout,
-                        lanes => plazaHighways.TryGetValue(lanes, out NetPrefab road) ? road : null);
+                        (lanes, kind) => plazaHighways.TryGetValue((lanes, kind), out NetPrefab road) ? road : null);
                     if (roads != null)
                     {
                         AddPlazaPrefab(prefabSystem, plaza.id + RoadSuffix, meshes, roadsServices, priority++, roads, plaza.layout.LaneCount);

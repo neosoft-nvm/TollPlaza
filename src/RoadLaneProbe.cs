@@ -57,13 +57,19 @@ namespace TollPlaza
             foreach (NetPieceInfo pieceInfo in section.m_Pieces ?? new NetPieceInfo[0])
             {
                 NetPiecePrefab piece = pieceInfo.m_Piece;
-                if (piece == null || HasRequirements(pieceInfo.m_RequireAll, pieceInfo.m_RequireAny))
+                if (piece == null)
                 {
                     continue;
                 }
+                // Alternative pieces (flat, elevated, gravel...) share the section's width, and some sections
+                // (medians) only have conditional pieces, so every piece counts toward the width.
                 if (piece.m_Layer == NetPieceLayer.Surface || piece.m_Layer == NetPieceLayer.Bottom)
                 {
                     sectionWidth = System.Math.Max(sectionWidth, piece.m_Width);
+                }
+                if (HasRequirements(pieceInfo.m_RequireAll, pieceInfo.m_RequireAny))
+                {
+                    continue;
                 }
                 NetPieceLanes pieceLanes = piece.GetComponent<NetPieceLanes>();
                 if (pieceLanes?.m_Lanes == null)
@@ -85,6 +91,23 @@ namespace TollPlaza
                 lanes.Add(center + (invert ? -x : x));
             }
             cursor += sectionWidth;
+        }
+
+        /// <summary>Width of one section as laid in a road.</summary>
+        public static float SectionWidth(NetSectionPrefab section)
+        {
+            float width = 0f;
+            AddSection(section, false, ref width, new List<float>());
+            return width;
+        }
+
+        /// <summary>True when the section carries a car lane (a driving lane, not a shoulder or median).</summary>
+        public static bool HasCarLane(NetSectionPrefab section)
+        {
+            var lanes = new List<float>();
+            float width = 0f;
+            AddSection(section, false, ref width, lanes);
+            return lanes.Count > 0;
         }
 
         private static bool HasRequirements(NetPieceRequirements[] all, NetPieceRequirements[] any) =>

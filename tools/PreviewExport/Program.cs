@@ -32,6 +32,8 @@ namespace PreviewExport
                     .Append("\",\"width\":").Append(F(plaza.layout.TotalWidth))
                     .Append(",\"lane0\":").Append(F(plaza.layout.LaneCenterX(0)))
                     .Append(",\"laneWidth\":").Append(F(plaza.layout.LaneWidth))
+                    .Append(",\"medianWidth\":").Append(F(plaza.layout.IslandWidth))
+                    .Append(",\"roadWidth\":").Append(F(plaza.layout.RoadWidth))
                     .Append(",\"roads\":[");
                 // Straight highways through the plaza: [center x, start z, end z, lanes] in three.js space.
                 var segments = plaza.layout.RoadSegments();
@@ -39,7 +41,8 @@ namespace PreviewExport
                 {
                     if (s > 0) json.Append(',');
                     json.Append('[').Append(F(segments[s].a.x)).Append(',').Append(F(-segments[s].a.z)).Append(',')
-                        .Append(F(-segments[s].d.z)).Append(',').Append(segments[s].lanes).Append(']');
+                        .Append(F(-segments[s].d.z)).Append(',').Append(segments[s].lanes).Append(',')
+                        .Append(segments[s].kind == RoadPiece.Islands ? 1 : 0).Append(']');
                 }
                 json.Append("],\"laneXs\":[");
                 for (int l = 0; l < plaza.layout.LaneCount; l++)

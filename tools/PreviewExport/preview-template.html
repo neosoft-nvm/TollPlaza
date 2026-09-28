@@ -129,34 +129,79 @@ function showPlaza(plaza) {
     apply();
   });
 
-  // The plaza's own road (the in-game sub-nets): one straight one-way highway per road group, drawn
-  // with dashed lane lines, extended past both ends for context.
+  // The plaza's own road (the in-game sub-net): one highway with a raised median between every pair of
+  // lanes, laid exactly at the mod's lane positions. Past both ends a plain highway continues for context
+  // (in game that's the player's road, joined with the game's own widening).
   const asphalt = new THREE.MeshStandardMaterial({ color: 0x4a4b4e, roughness: 0.95 });
   const paint = new THREE.MeshStandardMaterial({ color: 0xe8e8e2, roughness: 0.8 });
-  for (const [x, zStart, zEnd, lanes] of plaza.roads) {
-    const z0 = zEnd - 60, z1 = zStart + 150, width = lanes * plaza.laneWidth + 3;
-    const road = new THREE.Mesh(new THREE.PlaneGeometry(width, z1 - z0), asphalt);
-    road.rotation.x = -Math.PI / 2;
-    road.position.set(x, -0.01, (z0 + z1) / 2);
-    road.receiveShadow = true;
-    plazaGroup.add(road);
-    const laneLeft = x - (lanes * plaza.laneWidth) / 2;
-    for (let i = 0; i <= lanes; i++) {
-      const lx = laneLeft + i * plaza.laneWidth, edge = i === 0 || i === lanes;
-      for (let z = z0; z < z1; z += edge ? 1000 : 9) {
-        const len = edge ? z1 - z0 : 3;
-        const dash = new THREE.Mesh(new THREE.PlaneGeometry(0.15, len), paint);
-        dash.rotation.x = -Math.PI / 2;
-        dash.position.set(lx, 0, z + len / 2);
-        plazaGroup.add(dash);
+  const curb = new THREE.MeshStandardMaterial({ color: 0xa9a69e, roughness: 0.9 });
+  // Flat quad on the ground from [xa1, xa2] at zA to [xb1, xb2] at zB (lets lines and asphalt taper).
+  const addQuad = (mat, y, xa1, xa2, zA, xb1, xb2, zB) => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute([xa1, y, zA, xa2, y, zA, xb2, y, zB, xb1, y, zB], 3));
+    g.setIndex(zB > zA ? [0, 2, 1, 0, 3, 2] : [0, 1, 2, 0, 2, 3]);
+    g.computeVertexNormals();
+    const m = new THREE.Mesh(g, mat);
+    m.receiveShadow = true;
+    plazaGroup.add(m);
+  };
+  const addLine = (xa, zA, xb, zB) => addQuad(paint, 0.005, xa - 0.075, xa + 0.075, zA, xb - 0.075, xb + 0.075, zB);
+  const lw = plaza.laneWidth, xs = plaza.laneXs, n = xs.length;
+  // Open pieces are an ordinary highway (lanes side by side).
+  const PLAIN = lw + plaza.medianWidth; // the highway's 4 m lanes = 3 m booth lane + 1 m island
+  const half = plaza.roadWidth / 2;
+  let zMin = Infinity, zMax = -Infinity, x = 0;
+  for (const [rx, zStart, zEnd, , islands] of plaza.roads) {
+    if (!islands) continue;
+    const zLo = Math.min(zStart, zEnd), zHi = Math.max(zStart, zEnd);
+    zMin = Math.min(zMin, zLo); zMax = Math.max(zMax, zHi); x = rx;
+
+    // Island piece: every lane its own channel, a raised median between each pair, shoulders outside.
+    addQuad(asphalt, -0.01, rx - half, rx + half, zLo, rx - half, rx + half, zHi);
+    for (let i = 0; i < n; i++) {
+      addLine(xs[i] - lw / 2, zLo, xs[i] - lw / 2, zHi);
+      addLine(xs[i] + lw / 2, zLo, xs[i] + lw / 2, zHi);
+      if (i > 0) {
+        const cx = (xs[i - 1] + xs[i]) / 2, w = xs[i] - xs[i - 1] - lw;
+        const median = new THREE.Mesh(new THREE.BoxGeometry(w, 0.18, zHi - zLo), curb);
+        median.position.set(cx, 0.09, (zLo + zHi) / 2);
+        median.receiveShadow = true;
+        plazaGroup.add(median);
       }
     }
   }
+  // The widening steps: ordinary highway pieces, two lanes more per step from the plaza ends (the player's
+  // highway width) to the booth count. The piece next to the islands bends its lines out to the median noses.
+  const plazaLine = i => i === 0 ? xs[0] - lw / 2 : i === n ? xs[n - 1] + lw / 2 : (xs[i - 1] + xs[i]) / 2;
+  const drawOpen = (m, zNear, zFar, toIslands) => {
+    const plainHalf = m * PLAIN / 2, roadHalf = plainHalf + 2;
+    const plainLine = i => x - plainHalf + i * PLAIN;
+    addQuad(asphalt, -0.01, x - (toIslands ? half : roadHalf), x + (toIslands ? half : roadHalf), zNear, x - roadHalf, x + roadHalf, zFar);
+    const len = Math.abs(zFar - zNear), dir = Math.sign(zFar - zNear);
+    for (let i = 0; i <= m; i++) {
+      const near = toIslands && m === n ? plazaLine(i) : plainLine(i);
+      const at = z => near + (plainLine(i) - near) * Math.min(1, Math.abs(z - zNear) / len);
+      if (i === 0 || i === m) { addLine(near, zNear, plainLine(i), zFar); continue; }
+      for (let s = 0; s < len; s += 9) {
+        const z0 = zNear + dir * s, z1 = zNear + dir * Math.min(s + 3, len);
+        addLine(at(z0), z0, at(z1), z1);
+      }
+    }
+  };
+  let zEndIn = zMax, zEndOut = zMin, endLanes = n;
+  for (const [, zStart, zEnd, m, islands] of plaza.roads) {
+    if (islands) continue;
+    const zLo = Math.min(zStart, zEnd), zHi = Math.max(zStart, zEnd);
+    const approach = zLo >= zMax - 0.01;       // three.js z grows toward the approach side
+    const zNear = approach ? zLo : zHi, zFar = approach ? zHi : zLo;
+    drawOpen(m, zNear, zFar, Math.abs(zNear - (approach ? zMax : zMin)) < 0.01);
+    if (approach && zHi > zEndIn) { zEndIn = zHi; endLanes = m; }
+    if (!approach && zLo < zEndOut) zEndOut = zLo;
+  }
+  // The player's highway beyond both ends, for context.
+  drawOpen(endLanes, zEndIn, zEndIn + 120, false);
+  drawOpen(endLanes, zEndOut, zEndOut - 50, false);
 
-  const car = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.45, 4.6), new THREE.MeshStandardMaterial({ color: 0xb02a2a, roughness: 0.4 }));
-  car.position.set(plaza.laneXs[0], 0.73, 30);
-  car.castShadow = true;
-  plazaGroup.add(car);
 
   scene.add(plazaGroup);
   document.querySelectorAll('#sizes button').forEach(b => b.classList.toggle('active', b.dataset.id === plaza.id));
@@ -232,7 +277,7 @@ for (const plaza of PLAZAS) {
   b.addEventListener('click', () => showPlaza(plaza));
   sizes.appendChild(b);
 }
-showPlaza(PLAZAS.find(p => p.id === 'TollPlaza_Plaza8') || PLAZAS[0]);
+showPlaza(PLAZAS.find(p => p.id === 'TollPlaza_Plaza6') || PLAZAS[0]);
 
 const views = {
   approach: [[-4, 2.2, 70], [0, 4, 0]],

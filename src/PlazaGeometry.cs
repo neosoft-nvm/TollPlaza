@@ -178,11 +178,13 @@ namespace TollPlaza
     {
         public static readonly (string id, string title, PlazaLayout layout)[] Plazas =
         {
-            ("TollPlaza_Plaza2", "Toll Plaza (2 lanes, ramp)", new PlazaLayout { LaneCount = 2, CashLanes = 1, IslandLength = 18f, CanopyDepth = 10f }),
+            ("TollPlaza_Plaza2", "Toll Plaza (2 lanes, ramp)", new PlazaLayout { LaneCount = 2, CashLanes = 1, IslandLength = 12f, CanopyDepth = 9f }),
+            ("TollPlaza_Plaza3", "Toll Plaza (3 lanes)", new PlazaLayout { LaneCount = 3, CashLanes = 1 }),
             ("TollPlaza_Plaza4", "Toll Plaza (4 lanes)", new PlazaLayout { LaneCount = 4, CashLanes = 2 }),
+            ("TollPlaza_Plaza5", "Toll Plaza (5 lanes)", new PlazaLayout { LaneCount = 5, CashLanes = 2 }),
             ("TollPlaza_Plaza6", "Toll Plaza (6 lanes)", new PlazaLayout { LaneCount = 6, CashLanes = 2 }),
-            ("TollPlaza_Plaza8", "Toll Plaza (8 lanes)", new PlazaLayout { LaneCount = 8, CashLanes = 3 }),
-            // 12-lane mainline plaza parked until users ask for it:
+            // Wider plazas (8, 10, 12) come later; the base game's one-way highways stop at 6 lanes:
+            // ("TollPlaza_Plaza8", "Toll Plaza (8 lanes)", new PlazaLayout { LaneCount = 8, CashLanes = 3 }),
             // ("TollPlaza_Plaza12", "Toll Plaza (12 lanes, mainline)", new PlazaLayout { LaneCount = 12, CashLanes = 4, CanopyDepth = 14f }),
         };
     }
@@ -329,45 +331,91 @@ namespace TollPlaza
     /// Coordinates: X across the lanes (left to right for approaching drivers), Y up from the road
     /// surface, Z along travel. Traffic approaches from -Z.
     /// </summary>
+    /// <summary>Kinds of plaza road piece: the player-facing ends, open widening steps, and the booth piece.</summary>
+    public enum RoadPiece
+    {
+        Open,
+        Islands,
+        End,
+    }
+
     public class PlazaLayout
     {
         public int LaneCount = 4;
         /// <summary>Lanes counted from the right that are cash lanes (green signs); the rest are electronic (purple).</summary>
         public int CashLanes = 2;
-        /// <summary>Lane spacing of the highway through the plaza; replaced by the measured value in game.</summary>
-        public float LaneWidth = 3.75f;
         /// <summary>
-        /// Islands sit on the lane lines of the highway (as on real plazas), so they're narrow and every lane
-        /// keeps its own straight path through the booths.
+        /// Width of one lane of the plaza highway ("Highway Drive Section 4"); replaced by the measured value
+        /// in game.
         /// </summary>
-        public float IslandWidth = 1.2f;
-        public float IslandLength = 22f;
+        public float LaneWidth = 3f;
+        /// <summary>
+        /// The plaza highway has a raised median between every pair of lanes ("Road Median 2"); the islands sit
+        /// on those medians, so every lane keeps its own channel through the booths. Replaced by the measured
+        /// median width in game.
+        /// </summary>
+        public float IslandWidth = 1f;
+        public float IslandLength = 14f;
         public float IslandHeight = 0.25f;
-        public float CanopyDepth = 12f;
+        public float CanopyDepth = 10f;
         public float CanopyClearance = 5.5f; // ~18 ft
 
         /// <summary>Large name billboard on the canopy roof; the 2-lane ramp plaza is too small to carry one.</summary>
-        public bool RoofSign => LaneCount >= 4;
+        public bool RoofSign => true;
 
-        /// <summary>Straight highway through the plaza: long approach before the island noses, short exit after.</summary>
-        public const float ApproachLength = 45f;
-        public const float ExitLength = 12f;
-
+        /// <summary>The raised-median road piece starts just ahead of the crash cushions and ends just past the island tails.</summary>
+        public const float IslandNoseLength = 2.2f;
+        public const float IslandTailLength = 0.5f;
         /// <summary>
-        /// Lanes per highway through the plaza. The game's widest one-way highway is 5 lanes, so 6- and 8-lane
-        /// plazas use two highways side by side, with a wide island between them.
+        /// Straight highway after the islands. The medians stop lane changes between the booths, so a car that
+        /// needs another lane (the player's road usually has fewer) changes here. On the old 10 m exit that meant
+        /// crossing lanes in a car length: the game's cars stop and reverse when the point they steer for is too
+        /// far to the side.
         /// </summary>
-        public int[] RoadGroups => LaneCount <= 4 ? new[] { LaneCount } : new[] { LaneCount / 2, LaneCount - LaneCount / 2 };
+        public const float ExitLength = 60f;
+        /// <summary>
+        /// Straight highway before the islands, long enough to slow down and pick a booth lane. The game's cars
+        /// brake at about 1 g at the last possible moment for a lower limit ahead, so the approach is cut into
+        /// short pieces whose speeds step down from the highway's to the zone speed (TollCollectionSystem):
+        /// many small, quick brakes that add up to a steady slowdown instead of one emergency stop.
+        /// </summary>
+        public const float ApproachLength = 100f;
+        public const int ApproachPieces = 8;
+        /// <summary>
+        /// Last approach pieces built as the raised-median road (without islands), so cars pick their booth
+        /// before them. Without them cars re-picked the shortest queue in the last 25 m and cut across. Built as
+        /// one piece with the islands, so it runs at the booth speeds; the speed steps end at the zone speed
+        /// where it starts.
+        /// </summary>
+        public const int ChannelPieces = 3;
+        /// <summary>Approach pieces with their own speed step (before the channel).</summary>
+        public const int StepPieces = ApproachPieces - ChannelPieces;
+        /// <summary>Plaza-local Z where the median road (channel, then islands) begins.</summary>
+        public float ChannelStartZ => IslandStartZ - ChannelPieces * (ApproachLength / ApproachPieces);
+
+        /// <summary>Plaza-local Z where the island piece (and the booth speeds) begins.</summary>
+        public float IslandStartZ => -IslandLength * 0.5f - IslandNoseLength;
+        /// <summary>Plaza-local Z where the approach begins (the player's highway connects here).</summary>
+        public float ApproachStartZ => IslandStartZ - ApproachLength;
+        /// <summary>Plaza-local Z where the island piece ends and the exit begins.</summary>
+        public float IslandEndZ => IslandLength * 0.5f + IslandTailLength;
+
+        /// <summary>One plaza highway carries every lane (it's composed per lane count, so there's no 5-lane cap).</summary>
+        public int[] RoadGroups => new[] { LaneCount };
 
         /// <summary>
-        /// Measured lane centers (relative to the road's center line) and road width of the game's one-way
-        /// highways, by lane count; filled in game by RoadLaneProbe. Without a measurement, lanes are assumed
-        /// evenly spaced with 1.5 m shoulders.
+        /// Measured lane centers (relative to the road's center line) and road width of the plaza highways, by
+        /// lane count; filled in game by RoadLaneProbe. Without a measurement, lanes are assumed evenly spaced
+        /// with a median between each pair and 2 m shoulders.
         /// </summary>
         public static readonly Dictionary<int, (float[] lanes, float width)> MeasuredRoads = new Dictionary<int, (float[], float)>();
 
+        /// <summary>Measured lane and median widths of the plaza highway sections, applied to every layout.</summary>
+        public static float? MeasuredLaneWidth, MeasuredMedianWidth;
+
         private float[] m_LaneX;
         private float[] m_RoadCenters;
+        private float m_RoadWidth;
 
         /// <summary>Recompute lane positions (after MeasuredRoads changes).</summary>
         public void Invalidate() => m_LaneX = null;
@@ -386,6 +434,9 @@ namespace TollPlaza
 
         private void ComputeLanes()
         {
+            if (MeasuredLaneWidth.HasValue) LaneWidth = MeasuredLaneWidth.Value;
+            if (MeasuredMedianWidth.HasValue) IslandWidth = MeasuredMedianWidth.Value;
+
             int[] groups = RoadGroups;
             var offsets = new List<float[]>();
             var widths = new List<float>();
@@ -395,20 +446,17 @@ namespace TollPlaza
                 {
                     offsets.Add(measured.lanes);
                     widths.Add(measured.width);
-                    if (n >= 2)
-                    {
-                        LaneWidth = measured.lanes[1] - measured.lanes[0];
-                    }
                 }
                 else
                 {
+                    float pitch = LaneWidth + IslandWidth;
                     var o = new float[n];
                     for (int i = 0; i < n; i++)
                     {
-                        o[i] = (i + 0.5f - n * 0.5f) * LaneWidth;
+                        o[i] = (i - (n - 1) * 0.5f) * pitch;
                     }
                     offsets.Add(o);
-                    widths.Add(n * LaneWidth + 3f);
+                    widths.Add(n * LaneWidth + (n - 1) * IslandWidth + 4f);
                 }
             }
 
@@ -417,6 +465,7 @@ namespace TollPlaza
             {
                 total += w;
             }
+            m_RoadWidth = total;
             float cursor = -total * 0.5f;
             var lanes = new List<float>();
             m_RoadCenters = new float[groups.Length];
@@ -435,41 +484,81 @@ namespace TollPlaza
 
         public float LaneCenterX(int lane) => LaneXs[lane];
 
-        /// <summary>Islands 0..LaneCount: outer islands on the road edges' lane lines, inner ones between lanes.</summary>
+        /// <summary>Full width of the plaza highway (lanes, medians and shoulders).</summary>
+        public float RoadWidth
+        {
+            get
+            {
+                float[] unused = LaneXs;
+                return m_RoadWidth;
+            }
+        }
+
+        /// <summary>Shoulder width outside the first and last lane (where the outer islands stand).</summary>
+        private float ShoulderWidth
+        {
+            get
+            {
+                float[] x = LaneXs;
+                return Mathf.Max(0.8f, (m_RoadWidth - (x[LaneCount - 1] - x[0]) - LaneWidth) * 0.5f);
+            }
+        }
+
+        /// <summary>
+        /// Islands 0..LaneCount: inner ones exactly on the road's medians between lanes, outer ones on the
+        /// shoulders, their inner edge on the outer lane's edge line.
+        /// </summary>
         public float IslandCenterX(int island)
         {
             float[] x = LaneXs;
-            if (island <= 0) return x[0] - LaneWidth * 0.5f;
-            if (island >= LaneCount) return x[LaneCount - 1] + LaneWidth * 0.5f;
+            float outer = IslandWidthAt(0) * 0.5f;
+            if (island <= 0) return x[0] - LaneWidth * 0.5f - outer;
+            if (island >= LaneCount) return x[LaneCount - 1] + LaneWidth * 0.5f + outer;
             return (x[island - 1] + x[island]) * 0.5f;
         }
 
-        /// <summary>Normal islands are narrow; the one between two side-by-side highways fills the gap.</summary>
+        /// <summary>Inner islands fill the median between their lanes; outer ones fit the shoulder.</summary>
         public float IslandWidthAt(int island)
         {
-            if (island <= 0 || island >= LaneCount) return IslandWidth;
+            if (island <= 0 || island >= LaneCount) return Mathf.Min(IslandWidth, ShoulderWidth);
             float[] x = LaneXs;
-            return x[island] - x[island - 1] - LaneWidth + IslandWidth;
+            return Mathf.Max(0.8f, x[island] - x[island - 1] - LaneWidth);
         }
 
-        public float TotalWidth => LaneXs[LaneCount - 1] - LaneXs[0] + LaneWidth + IslandWidth;
+        public float TotalWidth => LaneXs[LaneCount - 1] - LaneXs[0] + LaneWidth + 2f * IslandWidthAt(0);
 
         /// <summary>
-        /// The plaza's own road: one straight one-way highway per road group, as cubic Béziers between
-        /// numbered nodes (group g runs from node 2g to node 2g+1). Players connect their highway to the
-        /// ends like any road end.
+        /// The plaza's own road, straight pieces joined end to end: the approach (the base game's one-way
+        /// highway with as many lanes as the plaza has booths, cut into ApproachPieces speed steps), the island
+        /// piece (same lanes, a raised median under each island), and the same highway again for the exit. A 6-booth plaza has 6 lanes in and 6 out, so the
+        /// player's matching highway connects straight on; merging down to fewer lanes is up to the player.
         /// </summary>
-        public List<(Vector3 a, Vector3 b, Vector3 c, Vector3 d, int startNode, int endNode, int lanes)> RoadSegments()
+        public List<(Vector3 a, Vector3 b, Vector3 c, Vector3 d, int startNode, int endNode, int lanes, RoadPiece kind)> RoadSegments()
         {
             float[] unused = LaneXs; // ensure road centers are computed
             float hl = IslandLength * 0.5f;
-            int[] groups = RoadGroups;
-            var segments = new List<(Vector3, Vector3, Vector3, Vector3, int, int, int)>();
-            for (int g = 0; g < groups.Length; g++)
+            float x = m_RoadCenters[0];
+            float islandStart = IslandStartZ;
+            float islandEnd = IslandEndZ;
+
+            // Pieces in travel order: the approach steps, islands, exit.
+            var pieces = new List<(int lanes, RoadPiece kind, float length)>();
+            for (int i = 0; i < StepPieces; i++)
             {
-                var start = new Vector3(m_RoadCenters[g], 0f, -hl - ApproachLength);
-                var end = new Vector3(m_RoadCenters[g], 0f, hl + ExitLength);
-                segments.Add((start, Vector3.Lerp(start, end, 1f / 3f), Vector3.Lerp(start, end, 2f / 3f), end, 2 * g, 2 * g + 1, groups[g]));
+                pieces.Add((LaneCount, RoadPiece.End, ApproachLength / ApproachPieces));
+            }
+            // Channel and islands are one piece: a joint between two median-road pieces becomes a junction
+            // (painted arrows and X's) whose inner lanes the cars avoid.
+            pieces.Add((LaneCount, RoadPiece.Islands, islandEnd - ChannelStartZ));
+            pieces.Add((LaneCount, RoadPiece.End, ExitLength));
+            float z = ApproachStartZ;
+            var segments = new List<(Vector3, Vector3, Vector3, Vector3, int, int, int, RoadPiece)>();
+            for (int s = 0; s < pieces.Count; s++)
+            {
+                var start = new Vector3(x, 0f, z);
+                z += pieces[s].length;
+                var end = new Vector3(x, 0f, z);
+                segments.Add((start, Vector3.Lerp(start, end, 1f / 3f), Vector3.Lerp(start, end, 2f / 3f), end, s, s + 1, pieces[s].lanes, pieces[s].kind));
             }
             return segments;
         }
@@ -488,13 +577,25 @@ namespace TollPlaza
                     continue; // the wide middle island between two highways has its own crash cushion
                 }
                 float x = IslandCenterX(island);
-                for (int k = 0; k < 3; k++)
+                for (int k = 0; k < DelineatorCount; k++)
                 {
                     float offset = 0.8f + k * 1.1f;
                     Delineator(b, new Vector3(x, 0f, -hl - 1.8f - offset));
                     Delineator(b, new Vector3(x, 0f, hl + offset));
                 }
+                // Solid white line under the posts (the road's own lane line is dashed there).
+                float run = 0.8f + (DelineatorCount - 1) * 1.1f + 1.0f;
+                SolidLine(b, x, -hl - 1.8f - run, -hl - 1.8f);
+                SolidLine(b, x, hl, hl + run);
             }
+        }
+
+        /// <summary>Posts per island end: 4 (was 3), a line 50% longer.</summary>
+        private const int DelineatorCount = 4;
+
+        private static void SolidLine(PlazaMeshBuilder b, float x, float z0, float z1)
+        {
+            b.Box(Paint.LaneMarking, new Vector3(x - 0.075f, 0f, z0), new Vector3(x + 0.075f, 0.025f, z1));
         }
 
         private static void Delineator(PlazaMeshBuilder b, Vector3 at)
@@ -611,9 +712,9 @@ namespace TollPlaza
         {
             // Billboard centered on the roof, facing approaching traffic; the plaza name goes on it later.
             float roofTop = CanopyClearance + 0.5f;
-            float hw = Mathf.Min(TotalWidth * 0.3f, 16f);
+            float hw = RoofSignSize.x * 0.5f;
             float y0 = roofTop + 1.2f;
-            float y1 = y0 + 3.6f;
+            float y1 = y0 + RoofSignSize.y;
             const float z = 0f;
 
             // Steel legs and a horizontal strongback behind the panel.
@@ -630,7 +731,8 @@ namespace TollPlaza
         }
 
         /// <summary>Roof billboard face size in meters (width, height), for baking its artwork.</summary>
-        public Vector2 RoofSignSize => new Vector2(2f * Mathf.Min(TotalWidth * 0.3f, 16f), 3.6f);
+        // Wide enough for a district or city name; shorter on the small plazas so it keeps its proportions.
+        public Vector2 RoofSignSize => new Vector2(TotalWidth * 0.9f, Mathf.Min(3.6f, TotalWidth * 0.9f * 0.25f));
 
         /// <summary>Lane sign face size in meters (width, height).</summary>
         public Vector2 LaneSignSize => new Vector2(LaneWidth * 0.56f, 1.1f);
@@ -638,9 +740,11 @@ namespace TollPlaza
         /// <summary>Speed limit sign (US R2-1 proportions, 24x30 in scaled to fit the attenuator face).</summary>
         public static readonly Vector2 SpeedSignSize = new Vector2(0.62f, 0.76f);
 
-        /// <summary>Speed limits through the booth lanes, in mph (defaults; adjustable later in the control panel).</summary>
+        /// <summary>Default speed limits through the booth lanes, in mph (changed in the control panel, see TollState).</summary>
         public const int CashSpeedMph = 10;
-        public const int EtcSpeedMph = 35;
+        public const int EtcSpeedMph = 15;
+        /// <summary>Approach and exit speed, a step down from the highway before the booth lanes.</summary>
+        public const int ZoneSpeedMph = 25;
 
         /// <summary>Toll-rate sign face size in meters (width, height).</summary>
         public static readonly Vector2 RateSignSize = new Vector2(4.0f, 2.6f);
@@ -708,11 +812,16 @@ namespace TollPlaza
                 BuildExitGate(b, lane, closed);
             }
 
-            // Lane speed limit on the crash cushion at the nose of the lane's left island.
+            // Lane speed limit on a post atop the crash cushion at the nose of the lane's left island, raised
+            // clear of the delineator posts in front of it.
             float ix = IslandCenterX(lane);
             float noseZ = -IslandLength * 0.5f - 1.84f;
+            const float signBottom = 1.1f;
+            b.Box(Paint.DarkMetal, new Vector3(ix - 0.04f, 0.9f, noseZ + 0.06f), new Vector3(ix + 0.04f, signBottom + SpeedSignSize.y * 0.5f, noseZ + 0.14f));
+            b.Box(Paint.SignWhite, new Vector3(ix - SpeedSignSize.x * 0.5f, signBottom, noseZ + 0.01f),
+                new Vector3(ix + SpeedSignSize.x * 0.5f, signBottom + SpeedSignSize.y, noseZ + 0.06f));
             b.FaceQuad(cash ? Paint.SignFaceSpeedCash : Paint.SignFaceSpeed,
-                ix - SpeedSignSize.x * 0.5f, ix + SpeedSignSize.x * 0.5f, 0.1f, 0.1f + SpeedSignSize.y, noseZ);
+                ix - SpeedSignSize.x * 0.5f, ix + SpeedSignSize.x * 0.5f, signBottom, signBottom + SpeedSignSize.y, noseZ);
 
             // Lane number plate to the left of the sign (lanes numbered 1.. from the left).
             float nx = x - hw - 0.36f;
