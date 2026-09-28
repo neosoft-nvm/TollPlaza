@@ -64,6 +64,7 @@ namespace TollPlaza
             updateSystem.UpdateAt<PlazaPersistence>(SystemUpdatePhase.UIUpdate);
             updateSystem.UpdateAt<TollBudgetSystem>(SystemUpdatePhase.UIUpdate);
             updateSystem.UpdateAt<PlazaSignSystem>(SystemUpdatePhase.Rendering);
+            updateSystem.UpdateAfter<ClosedLaneSystem, Game.Pathfind.LaneDataSystem>(SystemUpdatePhase.ModificationEnd);
         }
 
         // The icon is written next to the DLL at load time and served to the UI through a coui:// host,

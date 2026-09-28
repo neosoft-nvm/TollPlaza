@@ -177,7 +177,7 @@ namespace TollPlaza
             m_LoggedApproach.Clear();
             m_Layouts.Clear();
             m_Lengths.Clear();
-            m_ClosedLanes.Clear();
+            ClosedLaneSystem.Lanes.Clear();
             m_Tick = 0;
             m_PendingCents = 0;
             m_ExitTotal = m_ExitMissed = 0;
@@ -740,48 +740,37 @@ namespace TollPlaza
                 EntityManager.SetComponentData(lane, carLane);
             }
 
-            // A closed booth's lanes (its island piece, and the joint just before it) are marked forbidden, the
-            // game's own flag for lanes vehicles must keep out of: cars don't pick or change into them, and
-            // routes avoid them. Only the flags this mod set are ever cleared.
+            // A closed booth's lanes (its booth piece, and the joints near the island) are blocked end to end and
+            // marked forbidden: the game's own data for a lane vehicles can't use (as for an accident), so route
+            // finding goes around them. ClosedLaneSystem keeps that in place when the game refreshes the lane.
             bool atBooth = boothSpeed || (local.z > layout.IslandStartZ - ClosedLeadInMeters && local.z < layout.IslandEndZ);
             bool close = atBooth && PlazaStats.IsClosedLane(plaza, nearest);
-            if (close != m_ClosedLanes.Contains(lane))
+            if (close != ClosedLaneSystem.Lanes.Contains(lane))
             {
                 carLane = EntityManager.GetComponentData<Game.Net.CarLane>(lane);
                 if (close)
                 {
-                    if ((carLane.m_Flags & Game.Net.CarLaneFlags.Forbidden) != 0)
-                    {
-                        return nearest; // the game's own forbidden lane: leave it alone
-                    }
-                    carLane.m_Flags |= Game.Net.CarLaneFlags.Forbidden;
-                    m_ClosedLanes.Add(lane);
+                    ClosedLaneSystem.Lanes.Add(lane);
+                    carLane = ClosedLaneSystem.Close(carLane);
                 }
                 else
                 {
-                    carLane.m_Flags &= ~Game.Net.CarLaneFlags.Forbidden;
-                    m_ClosedLanes.Remove(lane);
+                    ClosedLaneSystem.Lanes.Remove(lane);
+                    carLane = ClosedLaneSystem.Open(carLane);
                 }
                 EntityManager.SetComponentData(lane, carLane);
-                // Re-read by route finding, like a lane blocked by an accident.
+                // Re-read by route finding.
                 if (!EntityManager.HasComponent<PathfindUpdated>(lane))
                 {
                     EntityManager.AddComponent<PathfindUpdated>(lane);
                 }
-                Mod.Log.Info($"[TollPlaza] Booth {nearest + 1} lane {(close ? "closed" : "reopened")}: {OwnerName(lane)} at z {local.z:F1}"
+                Mod.Log.Info($"[TollPlaza] {PlazaNames.Shown(plaza)} booth {nearest + 1} lane {(close ? "closed" : "reopened")}: {OwnerName(lane)} at z {local.z:F1}"
                     + $"{(EntityManager.HasComponent<SlaveLane>(lane) ? ", slave lane" : string.Empty)}{(EntityManager.HasComponent<MasterLane>(lane) ? ", master lane" : string.Empty)}");
-            }
-            else if (close && (carLane.m_Flags & Game.Net.CarLaneFlags.Forbidden) == 0)
-            {
-                // The game rebuilt the lane's flags: set it again.
-                carLane.m_Flags |= Game.Net.CarLaneFlags.Forbidden;
-                EntityManager.SetComponentData(lane, carLane);
             }
             return nearest;
         }
 
-        // Lanes this mod marked forbidden for a closed booth, and how far before the island that reaches.
-        private readonly HashSet<Entity> m_ClosedLanes = new HashSet<Entity>();
+        // How far before the island a closed booth's joint lanes are closed too.
         private const float ClosedLeadInMeters = 8f;
 
         private readonly Dictionary<Entity, PlazaLayout> m_Layouts = new Dictionary<Entity, PlazaLayout>();

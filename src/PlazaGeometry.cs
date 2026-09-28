@@ -921,9 +921,33 @@ namespace TollPlaza
             b.FaceQuad(Paint.SignFaceLaneNumber, nx - 0.3f, nx + 0.3f, ny - 0.3f, ny + 0.3f, faceZ - 0.105f, LaneNumberCell(lane + 1));
 
             // Lane signal to the right of the sign: LED matrix in a dark housing.
-            float lx = x + hw + 0.36f;
-            float ly = (y0 + y1) * 0.5f;
+            LaneLedCenter(lane, out float lx, out float ly, out _);
             b.Box(Paint.DarkMetal, new Vector3(lx - 0.33f, ly - 0.33f, faceZ - 0.15f), new Vector3(lx + 0.33f, ly + 0.33f, faceZ));
+            BuildLedPattern(b, lx, ly, faceZ - 0.17f, closed);
+        }
+
+        /// <summary>Center of a lane's LED lane-use signal, right of its lane sign, and the fascia's front.</summary>
+        public void LaneLedCenter(int lane, out float lx, out float ly, out float faceZ)
+        {
+            LaneSignPanel(lane, out float sx0, out float sx1, out float y0, out float y1, out faceZ);
+            lx = sx1 + 0.36f;
+            ly = (y0 + y1) * 0.5f;
+        }
+
+        /// <summary>
+        /// A closed lane's signal, drawn live over the model's green arrow: a dark plate over the arrow and a
+        /// red X in front of it.
+        /// </summary>
+        public void BuildClosedLaneLed(PlazaMeshBuilder b, int lane)
+        {
+            LaneLedCenter(lane, out float lx, out float ly, out float faceZ);
+            b.Box(Paint.DarkMetal, new Vector3(lx - 0.31f, ly - 0.31f, faceZ - 0.185f), new Vector3(lx + 0.31f, ly + 0.31f, faceZ - 0.172f));
+            BuildLedPattern(b, lx, ly, faceZ - 0.205f, closed: true);
+        }
+
+        /// <param name="z">Front of the LED pixels (they're 2 cm deep).</param>
+        private static void BuildLedPattern(PlazaMeshBuilder b, float lx, float ly, float z, bool closed)
+        {
             string[] pattern = closed ? ClosedPattern : OpenPattern;
             Paint led = closed ? Paint.LaneLightRed : Paint.LaneLight;
             const float pitch = 0.11f;
@@ -938,7 +962,7 @@ namespace TollPlaza
                     }
                     float cx = lx + (col - 2) * pitch;
                     float cy = ly + (2 - row) * pitch;
-                    b.Box(led, new Vector3(cx - px, cy - px, faceZ - 0.17f), new Vector3(cx + px, cy + px, faceZ - 0.15f));
+                    b.Box(led, new Vector3(cx - px, cy - px, z), new Vector3(cx + px, cy + px, z + 0.02f));
                 }
             }
         }

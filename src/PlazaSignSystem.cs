@@ -159,9 +159,15 @@ namespace TollPlaza
                 int l = lane;
                 pieces.Add(new Piece(
                     MeshOf($"lane|{id}|{lane}", () => LaneMesh(layout, l)),
-                    PlazaStats.IsClosedLane(plaza, lane)
-                        ? MaterialOf("lane|closed", () => SignArt.ClosedLaneSign(layout.LaneSignSize))
-                        : MaterialOf(isCash ? "lane|cash" : "lane|etc", () => SignArt.LaneSign(layout.LaneSignSize, isCash))));
+                    MaterialOf(isCash ? "lane|cash" : "lane|etc", () => SignArt.LaneSign(layout.LaneSignSize, isCash))));
+
+                // A closed lane's signal beside the sign: a red X over the model's green arrow.
+                if (PlazaStats.IsClosedLane(plaza, lane))
+                {
+                    var led = new PlazaMeshBuilder();
+                    layout.BuildClosedLaneLed(led, lane);
+                    pieces.AddRange(PiecesOf(led, $"closedled|{id}|{lane}"));
+                }
 
                 int mph = isCash ? TollState.CashMph : TollState.EtcMph;
                 pieces.Add(new Piece(
