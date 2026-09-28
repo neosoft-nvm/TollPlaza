@@ -24,6 +24,12 @@ namespace TollPlaza
 
         public static string Of(Entity plaza) => s_Names.TryGetValue(plaza, out string name) ? name : "Toll Plaza";
 
+        /// <summary>Every placed plaza (with its own road) and its name, as of the last refresh.</summary>
+        public static IEnumerable<Entity> Placed => s_Names.Keys;
+
+        /// <summary>The name to show for a plaza: a rename shows at once, before the next refresh.</summary>
+        public static string Shown(Entity plaza) => CustomName(plaza) ?? Of(plaza);
+
         /// <summary>True for a plaza placed before the current road layout; bulldoze and re-place it.</summary>
         public static bool IsOutdated(Entity plaza) => s_Outdated.Contains(plaza);
 

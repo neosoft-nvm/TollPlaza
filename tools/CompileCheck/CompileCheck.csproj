@@ -26,6 +26,8 @@
     <Reference Include="Unity.Mathematics"><Private>false</Private></Reference>
     <Reference Include="Unity.Burst"><Private>false</Private></Reference>
     <Reference Include="Newtonsoft.Json"><Private>false</Private></Reference>
+    <!-- Sign lettering drawn in game (SignArt); the game ships System.Drawing. -->
+    <Reference Include="System.Drawing"><Private>false</Private></Reference>
   </ItemGroup>
 
 </Project>

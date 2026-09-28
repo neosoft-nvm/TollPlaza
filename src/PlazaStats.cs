@@ -68,8 +68,12 @@ namespace TollPlaza
         // The frames of the vehicles charged in the last minute (not saved).
         private readonly Queue<uint> m_Recent = new Queue<uint>();
 
+        /// <summary>Frame of the last vehicle charged (not saved), or null; a booth's gate light shows green after it.</summary>
+        public uint? LastFrame { get; private set; }
+
         public void Record(uint frame)
         {
+            LastFrame = frame;
             m_Recent.Enqueue(frame);
             Prune(frame);
         }

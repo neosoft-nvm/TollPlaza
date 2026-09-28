@@ -610,12 +610,14 @@ namespace TollPlaza
         /// <summary>Default lane setup: the rightmost <see cref="CashLanes"/> lanes take cash.</summary>
         public bool IsCashLane(int lane) => lane >= LaneCount - CashLanes;
 
-        public void Build(PlazaMeshBuilder b)
+        /// <param name="gates">False for the working plaza (with its own road): PlazaSignSystem draws its exit
+        /// gates on whichever lanes currently take cash, so a lane switched to E-Toll loses its gate.</param>
+        public void Build(PlazaMeshBuilder b, bool gates = true)
         {
             BuildStatic(b);
             for (int lane = 0; lane < LaneCount; lane++)
             {
-                BuildLaneSign(b, lane, IsCashLane(lane), closed: false);
+                BuildLaneSign(b, lane, IsCashLane(lane), closed: false, gate: gates);
             }
         }
 
@@ -708,14 +710,25 @@ namespace TollPlaza
             b.Box(Paint.FasciaStripe, new Vector3(hw + t - 0.1f, sy0, -hd - t), new Vector3(hw + t + s, sy1, hd + t));
         }
 
+        /// <summary>
+        /// The roof billboard's panel in plaza-local meters: half width, bottom and top, and the plane of the
+        /// panel's front (the lettered face sits just in front of it, facing -Z toward approaching traffic).
+        /// PlazaSignSystem draws each plaza's name over the face.
+        /// </summary>
+        public void RoofSignPanel(out float hw, out float y0, out float y1, out float z)
+        {
+            float roofTop = CanopyClearance + 0.5f;
+            hw = RoofSignSize.x * 0.5f;
+            y0 = roofTop + 1.2f;
+            y1 = y0 + RoofSignSize.y;
+            z = 0f;
+        }
+
         private void BuildRoofSign(PlazaMeshBuilder b)
         {
-            // Billboard centered on the roof, facing approaching traffic; the plaza name goes on it later.
+            // Billboard centered on the roof, facing approaching traffic; PlazaSignSystem draws the name over it.
             float roofTop = CanopyClearance + 0.5f;
-            float hw = RoofSignSize.x * 0.5f;
-            float y0 = roofTop + 1.2f;
-            float y1 = y0 + RoofSignSize.y;
-            const float z = 0f;
+            RoofSignPanel(out float hw, out float y0, out float y1, out float z);
 
             // Steel legs and a horizontal strongback behind the panel.
             for (int i = 0; i < 4; i++)
@@ -755,7 +768,14 @@ namespace TollPlaza
         /// red = stop or lane closed). The arm is shown raised; once the toll logic runs it will drop until
         /// the vehicle has paid.
         /// </summary>
-        private void BuildExitGate(PlazaMeshBuilder b, int lane, bool closed)
+        public void BuildExitGate(PlazaMeshBuilder b, int lane, bool closed)
+        {
+            BuildGateArm(b, lane);
+            BuildLaneSignal(b, lane, closed);
+        }
+
+        /// <summary>The cash lane's gate cabinet with its red and white arm, raised.</summary>
+        public void BuildGateArm(PlazaMeshBuilder b, int lane)
         {
             float top = IslandHeight;
             float islandRight = IslandCenterX(lane) + IslandWidthAt(lane) * 0.5f;
@@ -767,6 +787,17 @@ namespace TollPlaza
             b.Box(Paint.DarkMetal, new Vector3(cx - 0.2f, top + 1.0f, gz - 0.2f), new Vector3(cx + 0.2f, top + 1.06f, gz + 0.2f));
             // Arm, raised.
             b.Box(Paint.GateArm, new Vector3(cx + 0.05f, top + 0.8f, gz - 0.05f), new Vector3(cx + 0.14f, top + 0.8f + 3.2f, gz + 0.05f));
+        }
+
+        /// <summary>
+        /// The two-lamp signal on a short post at the downstream end of the island, facing the driver: red
+        /// (closed: stop) or green (paid, go). Every lane has one in the working plaza (PlazaSignSystem).
+        /// </summary>
+        public void BuildLaneSignal(PlazaMeshBuilder b, int lane, bool closed)
+        {
+            float top = IslandHeight;
+            float islandRight = IslandCenterX(lane) + IslandWidthAt(lane) * 0.5f;
+            float gz = IslandLength * 0.5f - 2.4f;
 
             // Signal on a short post just past the gate, facing the driver.
             float sx = islandRight - 0.35f;
@@ -795,33 +826,56 @@ namespace TollPlaza
         /// Sign and LED lane signal over one lane: purple (electronic only) or green (cash) sign, and a
         /// green down-arrow when open or a red X when closed, like real plaza lane-use signals.
         /// </summary>
-        public void BuildLaneSign(PlazaMeshBuilder b, int lane, bool cash, bool closed)
+        /// <summary>
+        /// The lane sign's panel on the fascia (plaza-local): x range, y range, and its front plane (the panel runs
+        /// from faceZ - 0.1 to faceZ; the lettered face sits just in front). PlazaSignSystem redraws it live.
+        /// </summary>
+        public void LaneSignPanel(int lane, out float x0, out float x1, out float y0, out float y1, out float faceZ)
         {
             float x = LaneCenterX(lane);
-            float faceZ = -CanopyDepth * 0.5f - 0.3f; // front face of the fascia
-            float y0 = CanopyClearance - 0.2f;
-            float y1 = y0 + 1.1f;
             float hw = LaneWidth * 0.28f; // leaves room for the lane number and signal beside it
+            x0 = x - hw;
+            x1 = x + hw;
+            y0 = CanopyClearance - 0.2f;
+            y1 = y0 + 1.1f;
+            faceZ = -CanopyDepth * 0.5f - 0.3f; // front face of the fascia
+        }
+
+        /// <summary>
+        /// The lane's speed limit sign (on a post atop the crash cushion at the nose of the lane's left island):
+        /// x and y range of its face, and the face's plane (facing -Z, the white panel behind it).
+        /// </summary>
+        public void SpeedSignFace(int lane, out float x0, out float x1, out float y0, out float y1, out float z)
+        {
+            float ix = IslandCenterX(lane);
+            x0 = ix - SpeedSignSize.x * 0.5f;
+            x1 = ix + SpeedSignSize.x * 0.5f;
+            y0 = 1.1f; // raised clear of the delineator posts in front of it
+            y1 = y0 + SpeedSignSize.y;
+            z = -IslandLength * 0.5f - 1.84f;
+        }
+
+        public void BuildLaneSign(PlazaMeshBuilder b, int lane, bool cash, bool closed, bool gate = true)
+        {
+            LaneSignPanel(lane, out float sx0, out float sx1, out float y0, out float y1, out float faceZ);
+            float hw = (sx1 - sx0) * 0.5f;
+            float x = sx0 + hw;
 
             // Sign panel mounted on the approach face of the fascia, lettered face in front.
             b.Box(cash ? Paint.SignGreen : Paint.SignPurple, new Vector3(x - hw, y0, faceZ - 0.1f), new Vector3(x + hw, y1, faceZ));
             b.FaceQuad(cash ? Paint.SignFaceCash : Paint.SignFaceEtc, x - hw, x + hw, y0, y1, faceZ - 0.105f);
 
-            if (cash)
+            if (cash && gate)
             {
                 BuildExitGate(b, lane, closed);
             }
 
-            // Lane speed limit on a post atop the crash cushion at the nose of the lane's left island, raised
-            // clear of the delineator posts in front of it.
-            float ix = IslandCenterX(lane);
-            float noseZ = -IslandLength * 0.5f - 1.84f;
-            const float signBottom = 1.1f;
+            // Lane speed limit on a post atop the crash cushion at the nose of the lane's left island.
+            SpeedSignFace(lane, out float kx0, out float kx1, out float signBottom, out float signTop, out float noseZ);
+            float ix = (kx0 + kx1) * 0.5f;
             b.Box(Paint.DarkMetal, new Vector3(ix - 0.04f, 0.9f, noseZ + 0.06f), new Vector3(ix + 0.04f, signBottom + SpeedSignSize.y * 0.5f, noseZ + 0.14f));
-            b.Box(Paint.SignWhite, new Vector3(ix - SpeedSignSize.x * 0.5f, signBottom, noseZ + 0.01f),
-                new Vector3(ix + SpeedSignSize.x * 0.5f, signBottom + SpeedSignSize.y, noseZ + 0.06f));
-            b.FaceQuad(cash ? Paint.SignFaceSpeedCash : Paint.SignFaceSpeed,
-                ix - SpeedSignSize.x * 0.5f, ix + SpeedSignSize.x * 0.5f, signBottom, signBottom + SpeedSignSize.y, noseZ);
+            b.Box(Paint.SignWhite, new Vector3(kx0, signBottom, noseZ + 0.01f), new Vector3(kx1, signTop, noseZ + 0.06f));
+            b.FaceQuad(cash ? Paint.SignFaceSpeedCash : Paint.SignFaceSpeed, kx0, kx1, signBottom, signTop, noseZ);
 
             // Lane number plate to the left of the sign (lanes numbered 1.. from the left).
             float nx = x - hw - 0.36f;
@@ -852,14 +906,25 @@ namespace TollPlaza
             }
         }
 
+        /// <summary>
+        /// The freestanding toll-rate sign on the right shoulder ahead of the plaza: x and y range of its face,
+        /// and the plane of the panel's front (panel from z - 0.2 to z - 0.1, face at z - 0.205).
+        /// </summary>
+        public void RateSignPanel(out float x0, out float x1, out float y0, out float y1, out float z)
+        {
+            float x = TotalWidth * 0.5f + 5f; // on the shoulder, clear of the highway
+            x0 = x - 2.0f;
+            x1 = x + 2.0f;
+            y0 = 2.8f;
+            y1 = 5.4f;
+            z = -IslandLength * 0.5f - 12f;
+        }
+
         private void BuildRateSign(PlazaMeshBuilder b)
         {
-            // Freestanding toll-rate sign on the right shoulder ahead of the plaza.
-            float x = TotalWidth * 0.5f + 5f; // on the shoulder, clear of the highway
-            float z = -IslandLength * 0.5f - 12f;
-            const float hw = 2.0f;
-            const float y0 = 2.8f;
-            const float y1 = 5.4f;
+            RateSignPanel(out float rx0, out float rx1, out float y0, out float y1, out float z);
+            float x = (rx0 + rx1) * 0.5f;
+            float hw = (rx1 - rx0) * 0.5f;
 
             foreach (float px in new[] { x - 1.4f, x + 1.4f })
             {

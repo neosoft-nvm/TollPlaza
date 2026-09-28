@@ -108,19 +108,23 @@ namespace TollPlaza
                         continue;
                     }
 
-                    ObjectMeshInfo[] meshes = BuildPlazaMeshes(prefabSystem, plaza.id, plaza.id, plaza.layout);
+                    ObjectMeshInfo[] meshes = BuildPlazaMeshes(prefabSystem, plaza.id, plaza.id, plaza.layout, gates: true);
                     if (meshes == null)
                     {
                         continue;
                     }
 
                     // The working version carries its own highway through the booths; the decorative one is the
-                    // same model without a road, to place anywhere.
+                    // same model without a road, to place anywhere. The working one's exit gates aren't part of its
+                    // model: PlazaSignSystem draws them on the lanes that take cash, as switched in its panel.
                     ObjectSubNetInfo[] roads = PlazaRoad.Build(plaza.layout,
                         (lanes, kind) => plazaHighways.TryGetValue((lanes, kind), out NetPrefab road) ? road : null);
-                    if (roads != null)
+                    ObjectMeshInfo[] roadMeshes = roads != null
+                        ? BuildPlazaMeshes(prefabSystem, plaza.id + RoadSuffix, plaza.id, plaza.layout, gates: false)
+                        : null;
+                    if (roadMeshes != null)
                     {
-                        AddPlazaPrefab(prefabSystem, plaza.id + RoadSuffix, meshes, roadsServices, priority++, roads, plaza.layout.LaneCount);
+                        AddPlazaPrefab(prefabSystem, plaza.id + RoadSuffix, roadMeshes, roadsServices, priority++, roads, plaza.layout.LaneCount);
                     }
                     AddPlazaPrefab(prefabSystem, plaza.id, meshes, roadsServices, priority++, null, 0);
                 }
@@ -139,10 +143,11 @@ namespace TollPlaza
 
         /// <param name="prefabName">Names the meshes/assets (unique per menu entry).</param>
         /// <param name="plazaId">The catalog size the artwork belongs to (roof billboard texture).</param>
-        private ObjectMeshInfo[] BuildPlazaMeshes(PrefabSystem prefabSystem, string prefabName, string plazaId, PlazaLayout layout)
+        /// <param name="gates">Include the cash lanes' exit gates (see PlazaLayout.Build).</param>
+        private ObjectMeshInfo[] BuildPlazaMeshes(PrefabSystem prefabSystem, string prefabName, string plazaId, PlazaLayout layout, bool gates)
         {
             var builder = new PlazaMeshBuilder();
-            layout.Build(builder);
+            layout.Build(builder, gates);
 
             var meshInfos = new List<ObjectMeshInfo>();
             foreach (KeyValuePair<Paint, Mesh> part in builder.BuildMeshes(prefabName))

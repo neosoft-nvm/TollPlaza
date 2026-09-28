@@ -76,6 +76,23 @@
 ## Deployed 2026-09-28 ~16:56, confirmed in game
 - **Budget line** (shows as the last Income row, under Service Trade, and grows as tolls come in): "Toll Plazas" under Income on the Budget screen, with the plaza icon, in the chart, the total income and the monthly balance. Amount = last month's tolls, or this month's so far until a month with tolls has passed. The game's income sources are a fixed list, so `TollBudgetSystem` adds a 15th item (source index 14) to the budget screen's item list in memory, and wraps two of `BudgetUISystem`'s private bindings by reflection (values: 14 + tolls; total income: + tolls). If the game's code changes, it logs a warning and leaves the Budget screen alone. Nothing saved; the tolls themselves were already paid into city money as vehicles pass.
 
+## Built, not deployed yet, 2026-09-28 ~17:15
+- **Plaza names on the roof sign** (to-do 5): `PlazaSignSystem` draws a second face just in front of each plaza's baked "TOLL PLAZA" billboard with the plaza's own name (uppercase, shrunk to fit, same green/border/lettering as the baked sign), redrawn on rename or Auto name. The artwork is drawn in game by `SignArt` (System.Drawing, which the game ships; same code as TextureBaker), shown with HDRP/Lit via Graphics.DrawMesh each frame, the way the game draws its road-name labels. Not an entity, never saved; if anything fails it logs a warning and the baked sign stays. Road plazas only (decorative ones have no name).
+- **Roof name confirmed in game (17:14)**: sharp, lit like the rest of the plaza.
+
+## Built, not deployed yet, 2026-09-28 ~17:40
+- **Live plaza signs** (to-do 6 and 7), same drawn-face approach as the roof name (`PlazaSignSystem`, artwork by `SignArt`):
+  - lane signs follow the booth's Cash/E-Toll switch (drawn as a shell slightly bigger than the baked panel, so the old colour can't show);
+  - speed signs show the control panel's cash/E-Toll speeds;
+  - a lane switched to cash gets an exit gate (a cash lane switched to E-Toll keeps its baked gate, raised);
+  - the roof sign's second line says where the cash lanes are ("... CASH LANES RIGHT", "CASH LANES LEFT ...", "E-TOLL ONLY · NO CASH", "ALL LANES TAKE CASH", or "CASH AND E-TOLL LANES AS SIGNED");
+  - the toll-rate sign shows the control panel's rates.
+  Artwork is redrawn only when something changes and freed when no plaza shows it; signs refresh 4 times a second.
+- **Live signs confirmed in game (17:28)**: lane signs, speed signs (20 mph), rate sign ($3.00/$6.50/$4.75) and the roof's cash-lane line all follow the panels. Fix: the added gate's arm was solid red (stripe texture clamped instead of repeating along the arm).
+- **Gates follow the switch both ways**: the working plaza (with road) now has its own model without exit gates, and `PlazaSignSystem` draws a gate on every lane that currently takes cash, so a cash lane switched to E-Toll loses its gate. The decorative plaza keeps its built-in gates. Costs one extra copy of each plaza model at load.
+- **Gate light red until a vehicle pays** (built, not deployed): a cash lane's signal shows red, and green for 4 s (simulation time) after its booth charges a vehicle (`PlazaStats.LastFrame`, not saved). The arm stays raised, since vehicles would drive through a lowered one. Every lane now has the signal (E-Toll lanes the signal alone, cash lanes the gate arm too).
+- **Lane closure**: not working yet. The red X lane signal exists in the model code (`BuildLaneSign(closed: true)`) but nothing closes a lane. To-do 9.
+
 ## Next build
 
 ## To do
