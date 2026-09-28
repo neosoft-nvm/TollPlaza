@@ -99,9 +99,10 @@
 2. **Preview export broken**: tools/PreviewExport fails loading a texture source (`TextureBaker.LoadDetail`, System.Drawing "Parameter is not valid"), so preview/plaza.html still shows the old short approach.
 3. ~~6-booth plaza broken~~: fixed 2026-09-28 (built from the 5-lane highway, not the 1-lane one).
 4. **Last-minute lane changes**: check the channelized approach in game; lengthen it (`PlazaLayout.ChannelPieces`) if cars still cut across just before it.
-5. **Plaza names on the roof sign**: "<District> Toll Plaza" (city name if no district), editable per plaza. Hard, because the sign mesh and texture are shared between plazas.
-6. **Booth signs follow the cash/E-Toll toggle**: the lane sign, speed sign and exit gate should update when a booth is switched.
-7. **Speed signs follow the panel speeds**: the signs are baked at 15/10 and don't change when speeds are edited.
+5. ~~Plaza names on the roof sign~~: done 2026-09-28 (PlazaSignSystem).
+6. ~~Booth signs follow the cash/E-Toll toggle~~: done 2026-09-28, gates too.
+7. ~~Speed signs follow the panel speeds~~: done 2026-09-28, rate sign too.
+7b. **Gate light turns green too early**: it goes green when the booth charges the vehicle, which happens as the vehicle enters the booth's road piece, well before it reaches the booth. Could go green when the vehicle is within a few meters of the booth instead (verified working otherwise, 17:58).
 8. **Plaza deleted silently**: the plaza disappears when a road is drawn through it. Warn or protect it instead.
 9. **Closed lanes**: a red X lane signal, with traffic avoiding the lane.
 10. **Bigger plazas**: 8, 10 and 12 booths.
