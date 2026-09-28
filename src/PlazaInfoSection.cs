@@ -15,6 +15,7 @@ namespace TollPlaza
     {
         private PrefabSystem m_PrefabSystem;
         private TimeSystem m_TimeSystem;
+        private SimulationSystem m_SimulationSystem;
         private PlazaLayout m_Layout;
 
         protected override string group => nameof(PlazaInfoSection);
@@ -24,12 +25,19 @@ namespace TollPlaza
             base.OnCreate();
             m_PrefabSystem = World.GetOrCreateSystemManaged<PrefabSystem>();
             m_TimeSystem = World.GetOrCreateSystemManaged<TimeSystem>();
+            m_SimulationSystem = World.GetOrCreateSystemManaged<SimulationSystem>();
             m_InfoUISystem.AddMiddleSection(this);
             AddBinding(new TriggerBinding<int>("tollPlaza", "toggleBooth", ToggleBooth));
             AddBinding(new TriggerBinding<string>("tollPlaza", "renamePlaza", RenamePlaza));
+            AddBinding(new TriggerBinding("tollPlaza", "autoNamePlaza", AutoNamePlaza));
+            m_NameSystem = World.GetOrCreateSystemManaged<Game.UI.NameSystem>();
+            m_CityConfiguration = World.GetOrCreateSystemManaged<Game.City.CityConfigurationSystem>();
         }
 
-        /// <summary>Names the selected plaza; an empty name goes back to the automatic one.</summary>
+        private Game.UI.NameSystem m_NameSystem;
+        private Game.City.CityConfigurationSystem m_CityConfiguration;
+
+        /// <summary>Names the selected plaza; an empty name picks an automatic one, as "Auto name" does.</summary>
         private void RenamePlaza(string name)
         {
             if (m_Layout == null || selectedEntity == Entity.Null)
@@ -41,7 +49,23 @@ namespace TollPlaza
             {
                 name = name.Substring(0, 40);
             }
-            PlazaStats.Of(selectedEntity).Name = string.IsNullOrEmpty(name) ? null : name;
+            if (string.IsNullOrEmpty(name))
+            {
+                AutoNamePlaza();
+                return;
+            }
+            PlazaStats.Of(selectedEntity).Name = name;
+            m_InfoUISystem.RequestUpdate();
+        }
+
+        /// <summary>Replaces the plaza's name with a freshly picked automatic one (district, else city).</summary>
+        private void AutoNamePlaza()
+        {
+            if (m_Layout == null || selectedEntity == Entity.Null)
+            {
+                return;
+            }
+            PlazaNames.Repick(EntityManager, m_PrefabSystem, m_NameSystem, m_CityConfiguration.cityName, selectedEntity);
             m_InfoUISystem.RequestUpdate();
         }
 
@@ -95,10 +119,8 @@ namespace TollPlaza
             plaza.Roll(month);
 
             writer.PropertyName("name");
-            // Right after a rename the automatic names haven't been recomputed yet; the typed name shows at once.
+            // The kept name first: right after a rename the panel list hasn't been refreshed yet.
             writer.Write(PlazaNames.CustomName(selectedEntity) ?? TollUISystem.NameOf(selectedEntity));
-            writer.PropertyName("custom");
-            writer.Write(PlazaNames.CustomName(selectedEntity) != null);
             writer.PropertyName("outdated");
             writer.Write(PlazaNames.IsOutdated(selectedEntity));
             writer.PropertyName("plaza");
@@ -121,9 +143,18 @@ namespace TollPlaza
             writer.ArrayEnd();
         }
 
-        private static void WriteStats(IJsonWriter writer, PlazaStats stats)
+        private void WriteStats(IJsonWriter writer, PlazaStats stats)
         {
-            writer.TypeBegin("TollPlaza.Stats");
+            uint now = m_SimulationSystem.frameIndex;
+            // Its own type name: the UI engine keeps one property layout per name, and TollUISystem's
+            // "TollPlaza.Stats" (city totals) has no perMinute. Sharing the name garbled the data and crashed the game.
+            writer.TypeBegin("TollPlaza.PlazaStats");
+            writer.PropertyName("perMinute");
+            writer.Write(stats.PerMinute(now));
+            // How much of the last minute was measured (less than 60 s right after loading the city).
+            writer.PropertyName("measuredSeconds");
+            uint since = PlazaStats.MeasuringSince ?? now;
+            writer.Write((int)System.Math.Min(60u, (now - since) / 60u));
             writer.PropertyName("thisMonth");
             WriteMonth(writer, stats.ThisMonth);
             writer.PropertyName("lastMonth");

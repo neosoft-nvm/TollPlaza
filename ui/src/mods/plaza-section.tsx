@@ -6,21 +6,41 @@ import { count, dollars, MonthCompare, MonthPair } from "./stats";
 import styles from "./toll-panel.module.scss";
 
 // Written by PlazaInfoSection.cs.
+interface Stats extends MonthPair {
+    /** Vehicles charged in the last minute of simulation time (a minute at normal speed). */
+    perMinute: number;
+    /** Seconds of that minute measured so far (under 60 right after loading the city). */
+    measuredSeconds: number;
+}
+
 interface Booth {
     cash: boolean;
-    stats: MonthPair;
+    stats: Stats;
 }
 
 interface PlazaSectionProps {
     name: string;
-    custom: boolean;
     outdated: boolean;
-    plaza: MonthPair;
+    plaza: Stats;
     booths: Booth[];
 }
 
-/** The plaza's name with a Rename button; saving an empty name goes back to the automatic one. */
-const PlazaName = ({ name, custom }: { name: string; custom: boolean }) => {
+/** "12 vehicles/min", or "3 in the first 20 s" while the first minute after loading is still running. */
+const rate = (s: Stats) =>
+    s.measuredSeconds >= 60 ? `${s.perMinute} vehicles/min` : `${s.perMinute} in the first ${s.measuredSeconds} s`;
+
+const RateRow = ({ stats }: { stats: Stats }) => (
+    <div className={styles.row}>
+        <span className={styles.label}>Measured, last minute</span>
+        <span className={styles.value}>{rate(stats)}</span>
+    </div>
+);
+
+/**
+ * The plaza's name with Rename and Auto name buttons. A plaza keeps its name (even when a district is drawn
+ * later); "Auto name" picks a new one from the district, else the city. Saving an empty name does the same.
+ */
+const PlazaName = ({ name }: { name: string }) => {
     const [editing, setEditing] = useState(false);
     const [text, setText] = useState(name);
     const save = (value: string) => {
@@ -35,6 +55,9 @@ const PlazaName = ({ name, custom }: { name: string; custom: boolean }) => {
                 <Button variant="flat" className={styles.switch} onSelect={() => { setText(name); setEditing(true); }}>
                     Rename
                 </Button>
+                <Button variant="flat" className={styles.switch} onSelect={() => trigger("tollPlaza", "autoNamePlaza")}>
+                    Auto name
+                </Button>
             </div>
         );
     }
@@ -47,7 +70,7 @@ const PlazaName = ({ name, custom }: { name: string; custom: boolean }) => {
                     if (e.key === "Escape") setEditing(false);
                 }} />
             <Button variant="flat" className={styles.switch} onSelect={() => save(text)}>Save</Button>
-            {custom && <Button variant="flat" className={styles.switch} onSelect={() => save("")}>Auto</Button>}
+            <Button variant="flat" className={styles.switch} onSelect={() => setEditing(false)}>Cancel</Button>
         </div>
     );
 };
@@ -65,7 +88,7 @@ const PlazaSection = (props: PlazaSectionProps) => {
     return (
         <InfoSection disableFocus={true}>
             <div className={styles.section}>
-                <PlazaName name={props.name} custom={props.custom} />
+                <PlazaName name={props.name} />
                 {props.outdated && (
                     <div className={styles.warning}>
                         Old road layout: bulldoze and re-place this plaza for the current lanes and booth counts.
@@ -74,6 +97,7 @@ const PlazaSection = (props: PlazaSectionProps) => {
             </div>
             <div className={styles.section}>
                 <div className={styles.heading}>Whole plaza</div>
+                <RateRow stats={props.plaza} />
                 <MonthCompare stats={props.plaza} />
             </div>
             <div className={styles.section}>
@@ -83,9 +107,13 @@ const PlazaSection = (props: PlazaSectionProps) => {
                         <Button key={i} variant="flat"
                             className={`${styles.booth} ${b.cash ? styles.cash : styles.etc} ${booth === i ? styles.boothSelected : ""}`}
                             onSelect={() => setBooth(booth === i ? null : i)}>
-                            <div>{i + 1}</div>
-                            <div className={styles.boothType}>{b.cash ? "Cash" : "E-Toll"}</div>
-                            <div className={styles.boothMoney}>{dollars(b.stats.thisMonth.cents)}</div>
+                            {/* Stacked in a div of its own: the game's Button lays its children out in a row. */}
+                            <div className={styles.boothStack}>
+                                <div>{`${i + 1}`}</div>
+                                <div className={styles.boothType}>{b.cash ? "Cash" : "E-Toll"}</div>
+                                <div className={styles.boothMoney}>{dollars(b.stats.thisMonth.cents)}</div>
+                                <div className={styles.boothType}>{`${b.stats.perMinute}/min`}</div>
+                            </div>
                         </Button>
                     ))}
                 </div>
@@ -96,12 +124,13 @@ const PlazaSection = (props: PlazaSectionProps) => {
                         <span className={styles.heading}>{`Booth ${booth + 1} — ${selected.cash ? "Cash" : "E-Toll"}`}</span>
                         <Button variant="flat" className={styles.switch}
                             onSelect={() => trigger("tollPlaza", "toggleBooth", booth)}>
-                            Switch to {selected.cash ? "E-Toll" : "Cash"}
+                            {`Switch to ${selected.cash ? "E-Toll" : "Cash"}`}
                         </Button>
                     </div>
+                    <RateRow stats={selected.stats} />
                     <MonthCompare stats={selected.stats} />
                     <div className={styles.note}>
-                        {count(selected.stats.thisMonth.cars + selected.stats.thisMonth.trucks + selected.stats.thisMonth.buses)} paying vehicles this month
+                        {`${count(selected.stats.thisMonth.cars + selected.stats.thisMonth.trucks + selected.stats.thisMonth.buses)} paying vehicles this month`}
                     </div>
                 </div>
             )}

@@ -10,7 +10,8 @@ namespace TollPlaza
 {
     /// <summary>
     /// Plaza names for the panels, and which plazas still have an outdated road layout. A plaza is named
-    /// after the district it stands in, else the road it's built on, else the city ("Oak Hills Toll Plaza");
+    /// after the district it stands in, else the city, else (a city with no name) the road it's built on
+    /// ("Oak Hills Toll Plaza");
     /// plazas that end up with the same name are numbered ("... Toll Plaza 2"). A name the player typed
     /// (PlazaStats.Name, kept with the toll data outside the save) replaces the automatic one.
     /// </summary>
@@ -26,62 +27,102 @@ namespace TollPlaza
         /// <summary>True for a plaza placed before the current road layout; bulldoze and re-place it.</summary>
         public static bool IsOutdated(Entity plaza) => s_Outdated.Contains(plaza);
 
-        /// <summary>The player's name for the plaza, or null for the automatic one.</summary>
+        /// <summary>The plaza's kept name (typed by the player, or picked automatically once), or null if none yet.</summary>
         public static string CustomName(Entity plaza) =>
             PlazaStats.Plazas.TryGetValue(plaza, out PlazaStats stats) && !string.IsNullOrWhiteSpace(stats.Name) ? stats.Name : null;
 
-        /// <summary>Recomputes every placed plaza's name and layout check (oldest plaza first).</summary>
+        /// <summary>
+        /// Names every placed plaza (oldest first) and rechecks the layouts. A plaza keeps its name once it has
+        /// one, so drawing a district later doesn't rename it; only a plaza without a name yet (new, or the
+        /// player pressed "Auto name") gets one picked, numbered if another plaza already has it.
+        /// </summary>
         public static void Refresh(EntityManager em, PrefabSystem prefabs, NameSystem names, string city,
             IList<(Entity entity, PrefabBase prefab, int lanes)> placed)
         {
             s_Names.Clear();
             s_Outdated.Clear();
-            var auto = new List<(Entity entity, string name)>();
-            var uses = new Dictionary<string, int>();
+            var unnamed = new List<Entity>();
             foreach (var p in placed)
             {
                 if (IsOutdated(em, prefabs, p.entity, p.prefab))
                 {
                     s_Outdated.Add(p.entity);
                 }
-                string custom = CustomName(p.entity);
-                if (custom != null)
+                string kept = CustomName(p.entity);
+                if (kept != null)
                 {
-                    s_Names[p.entity] = custom;
-                    continue;
+                    s_Names[p.entity] = kept;
                 }
-                string name = AutoName(em, names, p.entity, city);
-                auto.Add((p.entity, name));
-                uses[name] = uses.TryGetValue(name, out int n) ? n + 1 : 1;
+                else
+                {
+                    unnamed.Add(p.entity);
+                }
             }
-            var numbered = new Dictionary<string, int>();
-            foreach ((Entity entity, string name) in auto)
+            foreach (Entity plaza in unnamed)
             {
-                if (uses[name] == 1)
-                {
-                    s_Names[entity] = name;
-                    continue;
-                }
-                int number = numbered.TryGetValue(name, out int k) ? k + 1 : 1;
-                numbered[name] = number;
-                s_Names[entity] = number == 1 ? name : $"{name} {number}";
+                Pick(em, prefabs, names, city, plaza);
             }
         }
 
-        private static string AutoName(EntityManager em, NameSystem names, Entity plaza, string city)
+        /// <summary>Picks and keeps a new automatic name for the plaza now (the "Auto name" button).</summary>
+        public static void Repick(EntityManager em, PrefabSystem prefabs, NameSystem names, string city, Entity plaza)
         {
+            s_Names.Remove(plaza);
+            Pick(em, prefabs, names, city, plaza);
+        }
+
+        private static void Pick(EntityManager em, PrefabSystem prefabs, NameSystem names, string city, Entity plaza)
+        {
+            string name = AutoName(em, prefabs, names, plaza, city);
+            var taken = new HashSet<string>(s_Names.Values);
+            string unique = name;
+            for (int n = 2; taken.Contains(unique); n++)
+            {
+                unique = $"{name} {n}";
+            }
+            s_Names[plaza] = unique;
+            PlazaStats.Of(plaza).Name = unique;
+        }
+
+        private static string AutoName(EntityManager em, PrefabSystem prefabs, NameSystem names, Entity plaza, string city)
+        {
+            string name, source;
             Entity district = DistrictOf(em, plaza);
+            Entity road = Entity.Null, edge = Entity.Null;
             if (district != Entity.Null)
             {
-                return Clean(names.GetRenderedLabelName(district)) + Suffix;
+                name = Clean(names.GetRenderedLabelName(district));
+                source = $"district {district}";
             }
-            Entity road = RoadOf(em, plaza);
-            if (road != Entity.Null)
+            else if (!string.IsNullOrWhiteSpace(city))
             {
-                return Clean(names.GetRenderedLabelName(road)) + Suffix;
+                name = city.Trim();
+                source = "city";
             }
-            return (string.IsNullOrWhiteSpace(city) ? "City" : city.Trim()) + Suffix;
+            else if ((road = RoadOf(em, plaza, out edge)) != Entity.Null)
+            {
+                name = Clean(names.GetRenderedLabelName(road));
+                source = $"road {road} ({PrefabName(em, prefabs, road)}) via edge {edge} ({PrefabName(em, prefabs, edge)})";
+            }
+            else
+            {
+                name = "City";
+                source = "nothing (no district, city name or road)";
+            }
+            // Logged when it changes, to trace names that don't match the road labels on the map.
+            if (!s_Sources.TryGetValue(plaza, out string last) || last != name + source)
+            {
+                s_Sources[plaza] = name + source;
+                Mod.Log.Info($"[TollPlaza] Plaza {plaza} named \"{name}\" from {source}");
+            }
+            return name + Suffix;
         }
+
+        private static readonly Dictionary<Entity, string> s_Sources = new Dictionary<Entity, string>();
+
+        private static string PrefabName(EntityManager em, PrefabSystem prefabs, Entity entity) =>
+            em.HasComponent<PrefabRef>(entity) && prefabs.TryGetPrefab(em.GetComponentData<PrefabRef>(entity), out PrefabBase prefab)
+                ? prefab.name : "?";
 
         private static string Clean(string name) => string.IsNullOrWhiteSpace(name) ? "City" : name.Trim();
 
@@ -114,8 +155,9 @@ namespace TollPlaza
         }
 
         /// <summary>The named road (street aggregate) joined to either end of the plaza, if any.</summary>
-        private static Entity RoadOf(EntityManager em, Entity plaza)
+        private static Entity RoadOf(EntityManager em, Entity plaza, out Entity via)
         {
+            via = Entity.Null;
             if (!em.HasBuffer<SubNet>(plaza))
             {
                 return Entity.Null;
@@ -143,13 +185,19 @@ namespace TollPlaza
                     for (int j = 0; j < connected.Length; j++)
                     {
                         Entity other = connected[j].m_Edge;
-                        if (!own.Contains(other) && em.HasComponent<Aggregated>(other))
+                        // Only built roads: not previews still being drawn (Temp) or pieces being removed.
+                        if (own.Contains(other) || !em.HasComponent<Aggregated>(other)
+                            || em.HasComponent<Game.Tools.Temp>(other) || em.HasComponent<Game.Common.Deleted>(other)
+                            || !em.HasComponent<PrefabRef>(other)
+                            || !em.HasComponent<RoadData>(em.GetComponentData<PrefabRef>(other).m_Prefab))
                         {
-                            Entity aggregate = em.GetComponentData<Aggregated>(other).m_Aggregate;
-                            if (aggregate != Entity.Null)
-                            {
-                                return aggregate;
-                            }
+                            continue;
+                        }
+                        Entity aggregate = em.GetComponentData<Aggregated>(other).m_Aggregate;
+                        if (aggregate != Entity.Null && !em.HasComponent<Game.Tools.Temp>(aggregate))
+                        {
+                            via = other;
+                            return aggregate;
                         }
                     }
                 }

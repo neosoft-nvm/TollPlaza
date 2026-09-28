@@ -160,6 +160,13 @@
     border-radius: 4rem;
 }
 
+.boothStack {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+}
+
 .cash { background-color: rgba(0, 107, 56, 0.6); }
 .etc { background-color: rgba(92, 51, 140, 0.6); }
 .boothSelected { border: 2rem solid #ffc70d; }

@@ -52,6 +52,27 @@
 
 - **6-booth confirmed fixed (new city, 13:26)**: two 6-booth plazas on 6-lane highways, straight road through, no wedges, traffic flowing. Bigger plazas (8/10/12) can use the same extension of the 5-lane highway.
 
+
+## Deployed 2026-09-28 ~14:15
+- **Name order is now district, else city, else road**: road names didn't match the map labels (two plazas on Grove and Hamilton Highway both became "Emerson Peak"). Roads are only used if the city has no name; previews and removed pieces are skipped, and the log says where each name came from ("Plaza … named … from …").
+- **Panel text**: booth tiles stack number/type/amount (the game's Button lays children in a row), "10 mph", "Switch to Cash".
+
+## Built, not deployed yet, 2026-09-28 ~14:30
+- **Names stick**: a plaza's automatic name is picked once (district, else city) and kept, so drawing a district later doesn't rename it. "Auto name" button next to Rename picks a fresh one on demand (an empty rename does the same). Kept names are saved with the toll data.
+- **Vehicles/min**: measured over the last minute of simulation time (3,600 frames, a minute at normal speed; pause and fast-forward don't skew it), for the whole plaza, each booth tile and the booth detail. Not saved: the first minute after loading shows "N in the first X s".
+- **Mods folder wiped by a deploy while the game ran** (14:20): the build deletes the folder first; only the locked Burst DLL survived. Redeploy before the next launch.
+
+## Built, not deployed yet, 2026-09-28 ~15:10
+- **Crash on clicking a booth tile (15:03)**: the game closed with an access violation inside its UI engine (cohtml.WindowsDesktop.dll, crash dump in `.cache/backtrace/crashpad/reports`), with no error in the mod's logs. The tiles were the game's Button with a nested full-width stack (new in the 14:15/14:31 builds). They're now plain clickable divs, with the selection border always present (transparent until selected) so the layout doesn't change on click.
+- **Crashed again with plain tiles (15:22)**: same address in cohtml. The stack runs JS → game C# → JS → crash, so something the booth details create calls into the game; nothing in the log shows booth clicks ever working. The one element unique to the booth details was the game's Button ("Switch to …"), created by the click: now a plain div too. The section is also wrapped in an error boundary that shows any script error in the panel instead of passing it to the game.
+- **Rolled back to ff7175b (16:15)**: still crashing, and by 16:12 on opening a plaza's panel at all, with a fresh basic playset (Mert's Toolbox not loaded, same cohtml address). All code changes since ff7175b are in `git stash` ("Since ff7175b: …"): sticky names, Auto name, vehicles/min, name order, panel text, the tile attempts. Bring them back one at a time once the rollback is confirmed stable.
+- **Rollback confirmed (16:20)**: panel opens, booth clicks work.
+- **Step 1 deployed (16:22)**: names (sticky, Auto name, district > city > road) and panel text (stacked tiles in the game's Button, "Switch to …", "10 mph"). No vehicles/min, no plain-div tiles, no error boundary. Step 2 = vehicles/min alone.
+- **Step 1 confirmed (16:30)**: everything works. So the crash came with vehicles/min. Theory: its extra rows (plaza row, 4th tile line, booth row) made the info panel tall enough to crash the UI engine once a booth's details were opened.
+- **Step 2 built (16:35)**: vehicles/min counting and data back, shown inside existing headings ("Whole plaza · 12 vehicles/min", "Booth 2 — Cash · 3/min"), no new rows or tile lines.
+- **Real cause found (16:40)**: step 2 showed "undefined"/"NaN" everywhere, then crashed. The plaza panel's stats and the control panel's city totals were both written as type "TollPlaza.Stats", and only the plaza's had perMinute/measuredSeconds. The UI engine (cohtml) keeps one property layout per type name, so the plaza data was read with the wrong layout: garbage values, and a crash when it read past the end. The panel's height had nothing to do with it. Fix: the plaza's stats are "TollPlaza.PlazaStats". Rule: every distinct shape written to the UI needs its own type name.
+- **Fix confirmed (16:40)**: real values back. Vehicles/min then moved back to its own "Measured, last minute" row (plaza and booth details) and a "/min" line on each booth tile, as first designed.
+
 ## Next build
 1. **Budget line**: a "Toll Plazas" income line on the game's Budget screen, counted in city income.
 

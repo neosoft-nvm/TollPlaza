@@ -53,8 +53,41 @@ namespace TollPlaza
         /// <summary>Per booth lane: true = cash, false = E-Toll; null until the player changes one.</summary>
         public bool[] Cash;
 
-        /// <summary>Name the player gave the plaza; null = automatic (district, road or city name).</summary>
+        /// <summary>The plaza's kept name: typed by the player, or picked automatically (district, else city)
+        /// the first time and kept from then on; null until then.</summary>
         public string Name;
+
+        /// <summary>Simulation frames in a minute at normal speed (60 per second), so vehicles/min stays true
+        /// when the game is paused or sped up.</summary>
+        public const uint FramesPerMinute = 3600;
+
+        /// <summary>Frame counting started (city load), or null before the first update; stats aren't saved,
+        /// so the first minute after loading is a partial one.</summary>
+        public static uint? MeasuringSince;
+
+        // The frames of the vehicles charged in the last minute (not saved).
+        private readonly Queue<uint> m_Recent = new Queue<uint>();
+
+        public void Record(uint frame)
+        {
+            m_Recent.Enqueue(frame);
+            Prune(frame);
+        }
+
+        /// <summary>Vehicles charged in the last minute of simulation time.</summary>
+        public int PerMinute(uint now)
+        {
+            Prune(now);
+            return m_Recent.Count;
+        }
+
+        private void Prune(uint now)
+        {
+            while (m_Recent.Count > 0 && now - m_Recent.Peek() >= FramesPerMinute)
+            {
+                m_Recent.Dequeue();
+            }
+        }
 
         /// <summary>Starts a new month when the game date moves on (month key = year * 12 + month).</summary>
         public void Roll(int month)
@@ -84,6 +117,8 @@ namespace TollPlaza
             City.ThisMonth = new MonthStats();
             City.LastMonth = new MonthStats();
             City.m_Booths.Clear();
+            City.m_Recent.Clear();
+            MeasuringSince = null;
         }
 
         public static PlazaStats Of(Entity plaza)

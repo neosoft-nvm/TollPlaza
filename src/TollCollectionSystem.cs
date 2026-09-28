@@ -105,6 +105,7 @@ namespace TollPlaza
         private CitySystem m_CitySystem;
         private TimeSystem m_TimeSystem;
         private PrefabSystem m_PrefabSystem;
+        private SimulationSystem m_SimulationSystem;
         private EntityQuery m_EdgeQuery;
         private EntityQuery m_CarQuery;
 
@@ -145,6 +146,7 @@ namespace TollPlaza
             m_CitySystem = World.GetOrCreateSystemManaged<CitySystem>();
             m_TimeSystem = World.GetOrCreateSystemManaged<TimeSystem>();
             m_PrefabSystem = World.GetOrCreateSystemManaged<PrefabSystem>();
+            m_SimulationSystem = World.GetOrCreateSystemManaged<SimulationSystem>();
             m_EdgeQuery = GetEntityQuery(
                 ComponentType.ReadOnly<Edge>(),
                 ComponentType.ReadOnly<PrefabRef>(),
@@ -187,6 +189,10 @@ namespace TollPlaza
             }
 
             m_Tick++;
+            if (PlazaStats.MeasuringSince == null)
+            {
+                PlazaStats.MeasuringSince = m_SimulationSystem.frameIndex;
+            }
             if (m_Tick % RefreshEdgesEveryUpdates == 1 || m_TollEdges.Count == 0)
             {
                 RefreshTollEdges();
@@ -239,6 +245,7 @@ namespace TollPlaza
                                 PlazaStats booth = PlazaStats.Of(at.plaza).Booth(at.booth);
                                 booth.Roll(month);
                                 booth.ThisMonth.Add(pass.Class, pass.Cents);
+                                booth.Record(m_SimulationSystem.frameIndex);
                             }
                         }
                         MeasureBraking(vehicles[j], at.plaza, ref pass);
@@ -703,6 +710,7 @@ namespace TollPlaza
             {
                 monthly.Roll(month);
                 monthly.ThisMonth.Add(cls, cents);
+                monthly.Record(m_SimulationSystem.frameIndex);
             }
             if (cents > 0)
             {

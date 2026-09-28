@@ -70,7 +70,7 @@ const SpeedRow = ({ label, id, mph }: { label: string; id: string; mph: number }
         <div className={styles.stepper}>
             <Button variant="flat" className={styles.step}
                 onSelect={() => trigger(group, "adjustSpeed", id, -SPEED_STEP_MPH)}>−</Button>
-            <span className={styles.rate}>{mph} mph</span>
+            <span className={styles.rate}>{`${mph} mph`}</span>
             <Button variant="flat" className={styles.step}
                 onSelect={() => trigger(group, "adjustSpeed", id, SPEED_STEP_MPH)}>+</Button>
         </div>
