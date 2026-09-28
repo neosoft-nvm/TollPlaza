@@ -109,6 +109,7 @@ namespace TollPlaza
         private EntityQuery m_EdgeQuery;
         private EntityQuery m_CarQuery;
         private EntityQuery m_TrailerQuery;
+        private EntityQuery m_RerouteQuery;
 
         private readonly List<(Entity edge, Entity plaza, bool booths)> m_TollEdges = new List<(Entity, Entity, bool)>();
         private readonly Dictionary<Entity, (Entity plaza, int booth, bool boothLane, bool pastBooths)> m_PlazaLanes =
@@ -159,6 +160,12 @@ namespace TollPlaza
                 ComponentType.ReadOnly<Game.Vehicles.CarCurrentLane>(),
                 ComponentType.Exclude<Deleted>(),
                 ComponentType.Exclude<Temp>());
+            m_RerouteQuery = GetEntityQuery(
+                ComponentType.ReadOnly<Game.Vehicles.CarCurrentLane>(),
+                ComponentType.ReadOnly<Game.Objects.Transform>(),
+                ComponentType.ReadWrite<Game.Pathfind.PathOwner>(),
+                ComponentType.Exclude<Deleted>(),
+                ComponentType.Exclude<Temp>());
             m_TrailerQuery = GetEntityQuery(
                 ComponentType.ReadOnly<Game.Vehicles.CarTrailerLane>(),
                 ComponentType.Exclude<Deleted>(),
@@ -178,6 +185,9 @@ namespace TollPlaza
             m_Layouts.Clear();
             m_Lengths.Clear();
             ClosedLaneSystem.Lanes.Clear();
+            m_Rerouted.Clear();
+            m_ClosedVersion = -1;
+            m_ReroutedCount = 0;
             m_Tick = 0;
             m_PendingCents = 0;
             m_ExitTotal = m_ExitMissed = 0;
@@ -308,6 +318,10 @@ namespace TollPlaza
                 }
             }
 
+            if (m_Tick % RerouteEveryUpdates == 0)
+            {
+                RerouteAroundClosedLanes();
+            }
             Forget();
             PayCity();
 
@@ -751,11 +765,13 @@ namespace TollPlaza
                 if (close)
                 {
                     ClosedLaneSystem.Lanes.Add(lane);
+                    m_ClosedChanges++;
                     carLane = ClosedLaneSystem.Close(carLane);
                 }
                 else
                 {
                     ClosedLaneSystem.Lanes.Remove(lane);
+                    m_ClosedChanges++;
                     carLane = ClosedLaneSystem.Open(carLane);
                 }
                 EntityManager.SetComponentData(lane, carLane);
@@ -768,6 +784,120 @@ namespace TollPlaza
                     + $"{(EntityManager.HasComponent<SlaveLane>(lane) ? ", slave lane" : string.Empty)}{(EntityManager.HasComponent<MasterLane>(lane) ? ", master lane" : string.Empty)}");
             }
             return nearest;
+        }
+
+        // Rerouting around closed lanes: how often (updates), and how near a plaza a vehicle must be to be checked.
+        private const int RerouteEveryUpdates = 8;
+        private const float RerouteRadiusMeters = 400f;
+        // How many upcoming route steps are checked per vehicle (the plaza is near, so it's early in the route).
+        private const int RerouteLookAhead = 64;
+        private readonly HashSet<Entity> m_Rerouted = new HashSet<Entity>();
+        private int m_ClosedVersion = -1;
+        private int m_ClosedChanges;
+        private int m_ReroutedCount;
+
+        /// <summary>
+        /// Vehicles only look for a new route when something blocks them, so one that planned its route through a
+        /// booth before it closed would still drive into it. Every vehicle near a plaza whose upcoming lanes or
+        /// route use a closed lane gets its route marked out of date (the game's own flag), and plans a new one
+        /// from where it is, around the closed booth. Once per vehicle per change of closed lanes.
+        /// </summary>
+        private void RerouteAroundClosedLanes()
+        {
+            if (ClosedLaneSystem.Lanes.Count == 0)
+            {
+                m_Rerouted.Clear();
+                return;
+            }
+            if (m_ClosedVersion != m_ClosedChanges)
+            {
+                m_ClosedVersion = m_ClosedChanges;
+                m_Rerouted.Clear();
+            }
+
+            // Plazas with a closed lane.
+            var centers = new List<float3>();
+            foreach ((Entity edge, Entity plaza, bool booths) in m_TollEdges)
+            {
+                if (booths && EntityManager.Exists(plaza) && EntityManager.HasComponent<Game.Objects.Transform>(plaza))
+                {
+                    PlazaLayout layout = LayoutOf(plaza);
+                    for (int lane = 0; layout != null && lane < layout.LaneCount; lane++)
+                    {
+                        if (PlazaStats.IsClosedLane(plaza, lane))
+                        {
+                            centers.Add(EntityManager.GetComponentData<Game.Objects.Transform>(plaza).m_Position);
+                            break;
+                        }
+                    }
+                }
+            }
+            if (centers.Count == 0)
+            {
+                return;
+            }
+
+            int rerouted = 0;
+            float radiusSq = RerouteRadiusMeters * RerouteRadiusMeters;
+            using (NativeArray<Entity> vehicles = m_RerouteQuery.ToEntityArray(Allocator.Temp))
+            using (NativeArray<Game.Objects.Transform> transforms = m_RerouteQuery.ToComponentDataArray<Game.Objects.Transform>(Allocator.Temp))
+            using (NativeArray<Game.Vehicles.CarCurrentLane> current = m_RerouteQuery.ToComponentDataArray<Game.Vehicles.CarCurrentLane>(Allocator.Temp))
+            {
+                for (int j = 0; j < vehicles.Length; j++)
+                {
+                    Entity vehicle = vehicles[j];
+                    if (m_Rerouted.Contains(vehicle) || ClosedLaneSystem.Lanes.Contains(current[j].m_Lane))
+                    {
+                        continue; // already done, or already in the closed lane: let it through
+                    }
+                    bool near = false;
+                    foreach (float3 c in centers)
+                    {
+                        near |= math.distancesq(c, transforms[j].m_Position) < radiusSq;
+                    }
+                    if (!near || !UsesClosedLane(vehicle))
+                    {
+                        continue;
+                    }
+                    Game.Pathfind.PathOwner owner = EntityManager.GetComponentData<Game.Pathfind.PathOwner>(vehicle);
+                    owner.m_State |= Game.Pathfind.PathFlags.Obsolete;
+                    EntityManager.SetComponentData(vehicle, owner);
+                    m_Rerouted.Add(vehicle);
+                    rerouted++;
+                }
+            }
+            if (rerouted > 0 && (m_ReroutedCount += rerouted) % 50 < rerouted)
+            {
+                Mod.Log.Info($"[TollPlaza] Rerouted {m_ReroutedCount} vehicles around closed booth lanes so far");
+            }
+        }
+
+        private bool UsesClosedLane(Entity vehicle)
+        {
+            if (EntityManager.HasBuffer<Game.Vehicles.CarNavigationLane>(vehicle))
+            {
+                foreach (Game.Vehicles.CarNavigationLane lane in EntityManager.GetBuffer<Game.Vehicles.CarNavigationLane>(vehicle, true))
+                {
+                    if (ClosedLaneSystem.Lanes.Contains(lane.m_Lane))
+                    {
+                        return true;
+                    }
+                }
+            }
+            if (EntityManager.HasBuffer<Game.Pathfind.PathElement>(vehicle))
+            {
+                DynamicBuffer<Game.Pathfind.PathElement> path = EntityManager.GetBuffer<Game.Pathfind.PathElement>(vehicle, true);
+                int start = EntityManager.GetComponentData<Game.Pathfind.PathOwner>(vehicle).m_ElementIndex;
+                int end = math.min(path.Length, start + RerouteLookAhead);
+                for (int i = math.max(0, start); i < end; i++)
+                {
+                    if (ClosedLaneSystem.Lanes.Contains(path[i].m_Target))
+                    {
+                        return true;
+                    }
+                }
+            }
+            return false;
         }
 
         // How far before the island a closed booth's joint lanes are closed too.
