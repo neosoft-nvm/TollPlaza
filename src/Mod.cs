@@ -125,6 +125,21 @@ namespace TollPlaza
     <rect x=""42"" y=""74"" width=""10"" height=""10""/>
     <rect x=""76"" y=""74"" width=""10"" height=""10""/>
   </g>
+  <g>
+    <rect x=""16"" y=""84"" width=""22"" height=""4"" fill=""#fff""/>
+    <rect x=""54"" y=""84"" width=""18"" height=""4"" fill=""#fff"" transform=""rotate(-40 54 86)""/>
+    <rect x=""88"" y=""84"" width=""22"" height=""4"" fill=""#fff""/>
+  </g>
+  <g fill=""#e03a2f"">
+    <rect x=""21"" y=""84"" width=""5"" height=""4""/>
+    <rect x=""31"" y=""84"" width=""5"" height=""4""/>
+    <g transform=""rotate(-40 54 86)"">
+      <rect x=""58"" y=""84"" width=""5"" height=""4""/>
+      <rect x=""67"" y=""84"" width=""5"" height=""4""/>
+    </g>
+    <rect x=""93"" y=""84"" width=""5"" height=""4""/>
+    <rect x=""103"" y=""84"" width=""5"" height=""4""/>
+  </g>
   <rect x=""4"" y=""98"" width=""120"" height=""6"" fill=""#b8b5ad""/>
   <g fill=""#ffc70d"">
     <rect x=""44"" y=""104"" width=""6"" height=""10""/>
