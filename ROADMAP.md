@@ -92,7 +92,7 @@
 - **Gates follow the switch both ways**: the working plaza (with road) now has its own model without exit gates, and `PlazaSignSystem` draws a gate on every lane that currently takes cash, so a cash lane switched to E-Toll loses its gate. The decorative plaza keeps its built-in gates. Costs one extra copy of each plaza model at load.
 - **Gate light red until a vehicle pays** (built, not deployed): a cash lane's signal shows red, and green for 4 s (simulation time) after its booth charges a vehicle (`PlazaStats.LastFrame`, not saved). The arm stays raised, since vehicles would drive through a lowered one. Every lane now has the signal (E-Toll lanes the signal alone, cash lanes the gate arm too).
 - **Animated gate arms (verified 2026-09-28, 18:50)**: gate arms rest down across the lane with the signal red (the decorative plaza too). As a vehicle comes up, its lane's arm swings up (0.8 s) and the signal turns green, timed from the vehicle's speed so the arm is up just before its front arrives; it stays up until the vehicle's back (length from its model, trailers checked on their own) is 1.5 m past, then 0.5 s more, and lowers over 1 s. Following vehicles keep it up; a re-raise continues from where the arm is. Simulation time (pauses with the game). `LaneGate` per booth lane, not saved; `PlazaSignSystem` rotates the arm about its hinge every frame. Developed on `dev/gate-animation`.
-- **Lane closure**: not working yet. The red X lane signal exists in the model code (`BuildLaneSign(closed: true)`) but nothing closes a lane. To-do 9.
+- **Closed lanes (verified 2026-09-28, 23:30)**: "Close lane" / "Open lane" per booth in the plaza info section (the last open booth stays open). A closed booth shows a red X in place of its arrow and a red signal. Route finding sees the closed booth lane as a crawling lane that costs more than any detour, handed to it directly every 32 frames (idea from Road Rules, see CREDITS.md). When a booth closes or opens, the plaza's lanes are re-read by route finding, since what it loads with the city can be stale. Cars already planning to use the booth are rerouted a second later, and again (up to 3 times) if the new route still uses it. Cars already committed to the booth drive through it. Nothing is saved; lanes left closed by earlier builds are reopened on load. Developed on `dev/closed-lanes`.
 
 ## Next build
 
@@ -105,7 +105,7 @@
 7. ~~Speed signs follow the panel speeds~~: done 2026-09-28, rate sign too.
 7b. ~~Gate light turns green too early~~: fixed 2026-09-28 with the animated gates (opens as the vehicle reaches the gate). Was: it goes green when the booth charges the vehicle, which happens as the vehicle enters the booth's road piece, well before it reaches the booth. Could go green when the vehicle is within a few meters of the booth instead (verified working otherwise, 17:58).
 8. **Plaza deleted silently**: the plaza disappears when a road is drawn through it. Warn or protect it instead.
-9. **Closed lanes**: a red X lane signal, with traffic avoiding the lane.
+9. ~~Closed lanes~~: done 2026-09-28.
 10. **Bigger plazas**: 8, 10 and 12 booths.
 11. **Commit and push** to GitHub once stable (everything since fe00117 is uncommitted).
 

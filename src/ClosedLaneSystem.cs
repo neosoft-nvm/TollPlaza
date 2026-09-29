@@ -10,9 +10,10 @@ using Unity.Entities;
 namespace TollPlaza
 {
     /// <summary>
-    /// Makes route finding avoid closed booth lanes. A closed lane is handed straight to route finding (the way the
-    /// Road Rules mod closes lanes) as a crawling, forbidden lane, so any other booth is far cheaper, and handed
-    /// again every so often in case the game refreshed it meanwhile. When a lane is marked PathfindUpdated, the
+    /// Makes route finding avoid closed booth lanes. A closed lane is handed straight to route finding (the idea comes from
+    /// the Road Rules mod, see CREDITS.md) as a crawling lane that is costly in every way a driver weighs a route, so any
+    /// other booth is far cheaper, and handed again every so often in case the game refreshed it meanwhile. When a
+    /// lane is marked PathfindUpdated, the
     /// game's LaneDataSystem first resets its speed and flags and LanesModifiedSystem then hands it to route finding;
     /// this also runs between the two so that refresh keeps it closed. It isn't blocked outright: a vehicle with no
     /// other way through must still have a route, or the game removes it. The lane's real speed is set back to the
@@ -36,7 +37,6 @@ namespace TollPlaza
         // How often closed lanes are handed to route finding again (frames).
         private const int ResendFrames = 32;
 
-        private static int s_Applied;
         private PathfindQueueSystem m_PathfindQueue;
         private readonly HashSet<Entity> m_Sent = new HashSet<Entity>();
         private int m_Frame;
@@ -65,13 +65,7 @@ namespace TollPlaza
                 // The game is about to hand the lane to route finding itself: keep it closed.
                 if (EntityManager.HasComponent<PathfindUpdated>(lane))
                 {
-                    Game.Net.CarLane before = EntityManager.GetComponentData<Game.Net.CarLane>(lane);
-                    EntityManager.SetComponentData(lane, Close(before));
-                    if (++s_Applied <= 20)
-                    {
-                        Mod.Log.Info($"[TollPlaza] Lane check: closed lane #{lane.Index} refreshed by the game, kept closed "
-                            + $"(speed {before.m_SpeedLimit:F1} > {ClosedSpeed}, flags {before.m_Flags})");
-                    }
+                    EntityManager.SetComponentData(lane, Close(EntityManager.GetComponentData<Game.Net.CarLane>(lane)));
                 }
                 // Newly closed, or due again: hand it to route finding directly.
                 if (m_Sent.Add(lane) || resend)
@@ -118,10 +112,6 @@ namespace TollPlaza
                 m_Location = PathUtils.GetLocationSpecification(curve),
             };
             m_PathfindQueue.Enqueue(action, Dependency);
-            if (++s_Applied <= 20)
-            {
-                Mod.Log.Info($"[TollPlaza] Lane check: closed lane #{lane.Index} queued for route finding (max speed {specification.m_MaxSpeed})");
-            }
         }
 
         public static Game.Net.CarLane Close(Game.Net.CarLane carLane)
