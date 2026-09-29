@@ -96,7 +96,7 @@
 
 ## Next build (dev/menu-tab, built, not tested)
 - **Own "Toll Plazas" tab** in the Roads menu, right after Road Services (which held ten plazas beside the maintenance depot): the 5 working plazas first, then the 5 decorative ones. A tab is a `UIAssetCategoryPrefab` in the Roads menu, sorted by its `UIObject` priority, with the plaza icon. If it can't be added, the plazas stay in Road Services.
-- **Prices set by the player**: working plazas 2 booths $105k, 4 $150k, 6 $175k (odd sizes halfway: 3 $127.5k, 5 $162.5k); for later sizes 8 $225k, 10 $265k, 12 $305k (were $150k–$250k). Decorative unchanged ($20k–$30k). For comparison (logged 2026-09-29): Road Maintenance Depot $75k, Stack Interchange $63.5k, parking halls $150k–$200k.
+- **Prices set by the player**: working plazas 2 booths $75k, 4 $100k, 6 $125k (odd sizes halfway: 3 $87.5k, 5 $112.5k); for later sizes 8 $225k, 10 $255k, 12 $300k (were $150k–$250k). Decorative unchanged ($20k–$30k). For comparison (logged 2026-09-29): Road Maintenance Depot $75k, Stack Interchange $63.5k, parking halls $150k–$200k.
 
 ## Merged to main 2026-09-29 ~10:05
 - **Approach steps 20.8 m** (3 steps, was 5 of 12.5 m): the transition the game builds where the plain approach meets the median road (~12.3 m before the joint) swallowed the whole last 12.5 m step and overlapped the joint before it. Approach (100 m) and channel (37.5 m) unchanged, so the plaza is the same size. Plazas placed before are flagged "old layout, re-place". Placed and played in game (a new 6-booth plaza, 09:44): traffic flows and pays (0 unpaid). It did **not** stop cars turning sideways at that joint (see Development).

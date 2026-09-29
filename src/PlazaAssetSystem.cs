@@ -187,7 +187,7 @@ namespace TollPlaza
 
         // Working plaza prices set by the player for the even sizes (8-12 booths are for later sizes);
         // an odd size costs halfway between its neighbours, and past 12 each booth adds $20k.
-        private static readonly uint[] s_EvenCosts = { 105000u, 150000u, 175000u, 225000u, 265000u, 305000u }; // 2, 4, ..., 12
+        private static readonly uint[] s_EvenCosts = { 75000u, 100000u, 125000u, 225000u, 255000u, 300000u }; // 2, 4, ..., 12
 
         /// <summary>Purchase price of a working plaza (with its road).</summary>
         public static uint WorkingCost(int booths)
