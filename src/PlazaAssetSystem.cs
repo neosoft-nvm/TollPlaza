@@ -344,7 +344,7 @@ namespace TollPlaza
                 var uiObject = objectPrefab.AddComponent<UIObject>();
                 uiObject.m_Group = category;
                 uiObject.m_Priority = priority;
-                uiObject.m_Icon = Mod.IconUri;
+                uiObject.m_Icon = subNets != null ? Mod.IconUri : Mod.DecorativeIconUri;
             }
 
             if (!prefabSystem.AddPrefab(objectPrefab))

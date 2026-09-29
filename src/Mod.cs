@@ -18,6 +18,9 @@ namespace TollPlaza
         private const string UiHost = "tollplaza";
         private const string IconFile = "TollPlaza.svg";
         public static string IconUri => "coui://" + UiHost + "/" + IconFile;
+        private const string DecorativeIconFile = "TollPlazaDecorative.svg";
+        /// <summary>A plainer icon for the decorative plazas, so they don't look like working ones in the menu.</summary>
+        public static string DecorativeIconUri => "coui://" + UiHost + "/" + DecorativeIconFile;
 
         public void OnLoad(UpdateSystem updateSystem)
         {
@@ -85,6 +88,7 @@ namespace TollPlaza
             string iconDir = Path.Combine(ModDirectory, "Icons");
             Directory.CreateDirectory(iconDir);
             File.WriteAllText(Path.Combine(iconDir, IconFile), IconSvg);
+            File.WriteAllText(Path.Combine(iconDir, DecorativeIconFile), DecorativeIconSvg);
             UIManager.defaultUISystem.AddHostLocation(UiHost, iconDir, false);
             Log.Info("[TollPlaza] Icon host registered at " + iconDir);
         }
@@ -151,6 +155,24 @@ namespace TollPlaza
     <rect x=""44"" y=""104"" width=""6"" height=""10""/>
     <rect x=""78"" y=""104"" width=""6"" height=""10""/>
   </g>
+</svg>";
+
+        // Decorative plazas: a bold, simplified canopy with no sign, gates or lane signals.
+        private const string DecorativeIconSvg =
+@"<svg xmlns=""http://www.w3.org/2000/svg"" viewBox=""0 0 128 128"">
+  <rect x=""6"" y=""24"" width=""116"" height=""26"" rx=""4"" fill=""#1a2e5c""/>
+  <g fill=""#ffc70d"">
+    <rect x=""18"" y=""32"" width=""20"" height=""10"" rx=""2""/>
+    <rect x=""54"" y=""32"" width=""20"" height=""10"" rx=""2""/>
+    <rect x=""90"" y=""32"" width=""20"" height=""10"" rx=""2""/>
+  </g>
+  <g fill=""#eee3cc"">
+    <rect x=""10"" y=""50"" width=""10"" height=""54""/>
+    <rect x=""108"" y=""50"" width=""10"" height=""54""/>
+    <rect x=""38"" y=""66"" width=""18"" height=""38"" rx=""2""/>
+    <rect x=""72"" y=""66"" width=""18"" height=""38"" rx=""2""/>
+  </g>
+  <rect x=""4"" y=""104"" width=""120"" height=""8"" rx=""2"" fill=""#8a8f98""/>
 </svg>";
     }
 }
