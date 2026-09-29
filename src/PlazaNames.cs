@@ -221,20 +221,24 @@ namespace TollPlaza
             {
                 return false;
             }
+            // Current: the one-piece channel + islands, and approach steps of the current length (the 12.5 m steps
+            // of earlier builds were too short for the joint before the channel, see PlazaLayout.StepPieces).
             float expected = layout.IslandEndZ - layout.ChannelStartZ;
+            bool islands = false, steps = false;
             DynamicBuffer<SubNet> subNets = em.GetBuffer<SubNet>(plaza, isReadOnly: true);
             for (int i = 0; i < subNets.Length; i++)
             {
                 Entity net = subNets[i].m_SubNet;
-                if (em.HasComponent<Curve>(net) && em.HasComponent<PrefabRef>(net)
-                    && prefabs.TryGetPrefab(em.GetComponentData<PrefabRef>(net), out PrefabBase road)
-                    && road is NetPrefab netPrefab && PlazaRoad.TollRoads.Contains(netPrefab)
-                    && em.GetComponentData<Curve>(net).m_Length > expected - 1f)
+                if (!em.HasComponent<Curve>(net) || !em.HasComponent<PrefabRef>(net)
+                    || !prefabs.TryGetPrefab(em.GetComponentData<PrefabRef>(net), out PrefabBase road) || !(road is NetPrefab netPrefab))
                 {
-                    return false;
+                    continue;
                 }
+                float length = em.GetComponentData<Curve>(net).m_Length;
+                islands |= PlazaRoad.TollRoads.Contains(netPrefab) && length > expected - 1f;
+                steps |= !PlazaRoad.TollRoads.Contains(netPrefab) && System.Math.Abs(length - PlazaLayout.StepLength) < 1f;
             }
-            return true;
+            return !(islands && steps);
         }
     }
 }

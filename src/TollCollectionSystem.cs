@@ -521,7 +521,7 @@ namespace TollPlaza
             if (z < layout.ApproachStartZ) return "before the plaza";
             if (z < layout.ChannelStartZ)
             {
-                int piece = (int)((z - layout.ApproachStartZ) / (PlazaLayout.ApproachLength / PlazaLayout.ApproachPieces));
+                int piece = (int)((z - layout.ApproachStartZ) / PlazaLayout.StepLength);
                 return $"approach step {piece + 1}";
             }
             if (z < layout.IslandStartZ) return "channel";
@@ -821,7 +821,8 @@ namespace TollPlaza
         /// Vehicles only look for a new route when something blocks them, so one that planned its route through a
         /// booth before it closed would still drive into it. Every vehicle near a plaza whose upcoming lanes or
         /// route use a closed lane gets its route marked out of date (the game's own flag), and plans a new one
-        /// from where it is, around the closed booth.
+        /// from where it is, around the closed booth. Only vehicles not yet on the plaza's road: the rest drive
+        /// through the closed booth rather than cross lanes in a hurry.
         /// </summary>
         private void RerouteAroundClosedLanes()
         {
@@ -872,9 +873,12 @@ namespace TollPlaza
                     bool retry = m_Rerouted.TryGetValue(vehicle, out var before);
                     if (now - m_ClosedChangedFrame < RerouteDelayFrames
                         || (retry && (before.tries >= RerouteTries || now - before.frame < RerouteRetryFrames))
-                        || ClosedLaneSystem.Lanes.Contains(current[j].m_Lane))
+                        || m_PlazaLanes.ContainsKey(current[j].m_Lane))
                     {
-                        continue; // too soon, done trying, or already in the closed lane: let it through
+                        // Too soon, done trying, or already on the plaza's road: let it through the closed booth. A
+                        // new route there leaves too little room to cross lanes, and a car told to switch lanes
+                        // close to where it must turn swings sideways, stops and reverses (seen on the approach).
+                        continue;
                     }
                     bool near = false;
                     foreach (float3 c in centers)

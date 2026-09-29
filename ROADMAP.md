@@ -94,7 +94,10 @@
 - **Animated gate arms (verified 2026-09-28, 18:50)**: gate arms rest down across the lane with the signal red (the decorative plaza too). As a vehicle comes up, its lane's arm swings up (0.8 s) and the signal turns green, timed from the vehicle's speed so the arm is up just before its front arrives; it stays up until the vehicle's back (length from its model, trailers checked on their own) is 1.5 m past, then 0.5 s more, and lowers over 1 s. Following vehicles keep it up; a re-raise continues from where the arm is. Simulation time (pauses with the game). `LaneGate` per booth lane, not saved; `PlazaSignSystem` rotates the arm about its hinge every frame. Developed on `dev/gate-animation`.
 - **Closed lanes (verified 2026-09-28, 23:30)**: "Close lane" / "Open lane" per booth in the plaza info section (the last open booth stays open). A closed booth shows a red X in place of its arrow and a red signal. Route finding sees the closed booth lane as a crawling lane that costs more than any detour, handed to it directly every 32 frames (idea from Road Rules, see CREDITS.md). When a booth closes or opens, the plaza's lanes are re-read by route finding, since what it loads with the city can be stale. Cars already planning to use the booth are rerouted a second later, and again (up to 3 times) if the new route still uses it. Cars already committed to the booth drive through it. Nothing is saved; lanes left closed by earlier builds are reopened on load. Developed on `dev/closed-lanes`.
 
-## Next build
+## Merged to main 2026-09-29 ~10:05
+- **Approach steps 20.8 m** (3 steps, was 5 of 12.5 m): the transition the game builds where the plain approach meets the median road (~12.3 m before the joint) swallowed the whole last 12.5 m step and overlapped the joint before it. Approach (100 m) and channel (37.5 m) unchanged, so the plaza is the same size. Plazas placed before are flagged "old layout, re-place". Placed and played in game (a new 6-booth plaza, 09:44): traffic flows and pays (0 unpaid). It did **not** stop cars turning sideways at that joint (see Development).
+- **Rerouting only before the plaza**: when a booth closes, only vehicles not yet on the plaza's road get a new route; the rest drive through the closed booth. Played with two booths closed: traffic looked normal.
+- **Last-minute lane changes accepted**: some cars still swing across the lanes just before the median road. Judged in game (2026-09-29) as close enough to real drivers changing lanes at the last minute; investigation parked under Development.
 - **Plazas can't be drawn over** (to-do 8): the game treats plain objects like props, so a road drawn across one quietly deleted it. Plazas now behave like buildings: the road tool shows its usual overlap error and won't build, and a plaza only goes when bulldozed. (`PlazaAssetSystem` clears the prefabs' Overridable flag after the game sets them up, on each city load.)
 - **Roads can't join the plaza between its ends** (screenshot 2026-09-29 00:11): the road tool let a street connect where two of the plaza's own road pieces meet (e.g. at the booths, under the canopy), as it does for any building's roads. `PlazaConnectionGuardSystem` marks such a preview road with the game's Error (red, won't build) and the overlap icon. The two ends, where the highway comes in and goes out, connect as before, and roads outside the plaza aren't affected. Only the tool preview is touched. Anarchy's "ignore errors" bypasses it, as it does every game error.
 - **Closed booths are remembered**: kept with the toll data on each save (`ModsData/TollPlaza/Cities/…`, not the save file), like the cash/E-Toll lanes: loading the city brings them back closed. Snapshots from older builds load with every booth open. At least one booth always stays open.
@@ -104,7 +107,7 @@
 ## To do
 2. **Preview export broken**: tools/PreviewExport fails loading a texture source (`TextureBaker.LoadDetail`, System.Drawing "Parameter is not valid"), so preview/plaza.html still shows the old short approach.
 3. ~~6-booth plaza broken~~: fixed 2026-09-28 (built from the 5-lane highway, not the 1-lane one).
-4. **Last-minute lane changes**: check the channelized approach in game; lengthen it (`PlazaLayout.ChannelPieces`) if cars still cut across just before it.
+4. **Last-minute lane changes**: check the channelized approach in game; lengthen it (`PlazaLayout.ChannelLength`) if cars still cut across just before it.
 5. ~~Plaza names on the roof sign~~: done 2026-09-28 (PlazaSignSystem).
 6. ~~Booth signs follow the cash/E-Toll toggle~~: done 2026-09-28, gates too.
 7. ~~Speed signs follow the panel speeds~~: done 2026-09-28, rate sign too.
@@ -112,7 +115,20 @@
 8. **Plaza deleted silently**: the plaza disappears when a road is drawn through it. Warn or protect it instead.
 9. ~~Closed lanes~~: done 2026-09-28.
 10. **Bigger plazas**: 8, 10 and 12 booths.
-11. **Commit and push** to GitHub once stable (everything since fe00117 is uncommitted).
+11. ~~Commit and push~~: done, pushed after each verified step.
+12. **Vehicles sideways / squeezed on the approach**: parked 2026-09-29, accepted as realistic last-minute lane changes. Notes under Development.
+
+## Development (try later)
+- **Sideways cars at the median-road joint** (to-do 12; reported 2026-09-29 ~01:00, screenshot `screenshots/Screenshot 2026-09-29 004821.png`).
+  - **Seen**: a car or truck turns across the lanes just before the booths; now and then a truck gets stuck and the game lifts it off and puts it back on its lane (its own stuck-vehicle recovery). Trucks shove into a lane another car is in.
+  - **Measured** (sideways probe, commit a1a7a05; joint-lane log, commit bf27e35; both removed from main, revert the reverts to use them again):
+    - About 280 vehicles in 20 minutes turned 35° or more, logged at the first sample past 35° (so peaks are higher): 126 at 35–49°, 127 at 50–69°, 26 at 70°+. About 15 squeezes (two vehicles overlapping side by side) in 17 minutes.
+    - All at one place: 55–60 m before the booths, the start of the joint between the last approach step and the median road. Every column, at 8–25 mph, already in the column of the booth the route heads for, no queue ahead. Not closing booths (happened with none closed), not queues.
+    - Joint lanes: the game builds a ~26 m transition there (12.3–13.4 m before the joint, 13.4 m after). Before the joint the 6 lanes are one lane group (a master lane at the center plus 6 lanes cars change between); after it each lane is its own lane between medians. Across the joint each booth gets a master lane from the road's **center** (x 0) to its lane, plus a straight lane.
+    - Lengthening the last step (12.5 m to 20.8 m) removed the overlap with the previous joint but didn't change the sideways count.
+  - **Theory (unconfirmed)**: cars going from the shared lane group into the separate median lanes are steered along the master lane, which starts at the road's center, so they swing toward the center and back.
+  - **Next steps**: read how CarNavigationSystem / CarLaneSelectIterator pick a lane when a lane group splits into separate lanes at a node (master lane vs. slave lanes, `UpdateOptimalLane`, `GroupTarget`); check how Road Builder (T.D.W.) composes median roads and whether its splits behave the same; then try a layout where the split isn't a joint (e.g. medians starting inside one piece, or the group already split where cars are slow). Record each vehicle's **peak** angle and count 70°+ turns per plaza, old vs. new layout, to measure any change.
+  - **Game rules found** (for reference): drivers keep re-picking the cheapest lane; a stopped vehicle ahead makes its lane look very expensive (~10,000,000 vs. 0.49 per moving one); a lane change is timed (~1–2.5 s, longer for long vehicles), keeps going at any speed, and never re-checks the lane beside once started; a steering target more than 45° off the heading makes a car stop and reverse.
 
 ## Future (community requests)
 - **On hold: ramps along the entry slow-down** (only if players ask): roads can join a plaza only at its two ends (`PlazaConnectionGuardSystem`). The joins between the entry's speed steps could be opened up so a ramp can merge there (booths, channel and exit stay blocked). Not done by default: cars would merge into lanes that are braking and queueing, and each joint would become a junction with its own paving and arrows (cars avoided lanes when that happened on the first channel design).
