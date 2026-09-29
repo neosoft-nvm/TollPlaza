@@ -754,10 +754,12 @@ namespace TollPlaza
                 EntityManager.SetComponentData(lane, carLane);
             }
 
-            // A closed booth's lanes (its booth piece, and the joints near the island) are blocked end to end and
-            // marked forbidden: the game's own data for a lane vehicles can't use (as for an accident), so route
-            // finding goes around them. ClosedLaneSystem keeps that in place when the game refreshes the lane.
-            bool atBooth = boothSpeed || (local.z > layout.IslandStartZ - ClosedLeadInMeters && local.z < layout.IslandEndZ);
+            // A closed booth's own lane on the booth piece is blocked end to end and marked forbidden: the game's own
+            // data for a lane vehicles can't use (as for an accident), so route finding goes around it. Lanes shared
+            // between booths (a lane group, e.g. where the booths merge back at the exit) are never closed: the game
+            // treats a block on any lane of a group as blocking the whole group, which left vehicles with no route at
+            // all (and the game removes those). ClosedLaneSystem keeps the block in place when the lane is refreshed.
+            bool atBooth = boothSpeed && !EntityManager.HasComponent<MasterLane>(lane) && !EntityManager.HasComponent<SlaveLane>(lane);
             bool close = atBooth && PlazaStats.IsClosedLane(plaza, nearest);
             if (close != ClosedLaneSystem.Lanes.Contains(lane))
             {
@@ -900,8 +902,6 @@ namespace TollPlaza
             return false;
         }
 
-        // How far before the island a closed booth's joint lanes are closed too.
-        private const float ClosedLeadInMeters = 8f;
 
         private readonly Dictionary<Entity, PlazaLayout> m_Layouts = new Dictionary<Entity, PlazaLayout>();
 

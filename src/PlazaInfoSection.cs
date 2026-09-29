@@ -84,9 +84,26 @@ namespace TollPlaza
             if (m_Layout != null && selectedEntity != Entity.Null && lane >= 0 && lane < m_Layout.LaneCount)
             {
                 PlazaStats booth = PlazaStats.Of(selectedEntity).Booth(lane);
+                if (!booth.Closed && OpenBooths() <= 1)
+                {
+                    return; // the last open booth stays open: with none, vehicles have no route and the game removes them
+                }
                 booth.Closed = !booth.Closed;
                 m_InfoUISystem.RequestUpdate();
             }
+        }
+
+        private int OpenBooths()
+        {
+            int open = 0;
+            for (int i = 0; i < m_Layout.LaneCount; i++)
+            {
+                if (!PlazaStats.IsClosedLane(selectedEntity, i))
+                {
+                    open++;
+                }
+            }
+            return open;
         }
 
         protected override void OnUpdate()
