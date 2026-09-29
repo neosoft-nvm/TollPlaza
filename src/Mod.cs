@@ -44,6 +44,10 @@ namespace TollPlaza
                     strings[$"Assets.DESCRIPTION[{plaza.id}{PlazaAssetSystem.RoadSuffix}]"] =
                         "American-style toll plaza that brings its own road: place it, then connect your highway to both ends.";
                 }
+                // The plazas' own tab in the Roads menu (PlazaAssetSystem.TollPlazasTab).
+                strings[$"SubServices.NAME[{PlazaAssetSystem.TabName}]"] = "Toll Plazas";
+                strings[$"SubServices.DESCRIPTION[{PlazaAssetSystem.TabName}]"] =
+                    "Toll plazas that collect tolls from passing vehicles, and decorative plazas without a road.";
                 // The Budget screen line (TollBudgetSystem); its one source is IncomeSource.Count by name.
                 strings[$"EconomyPanel.BUDGET_ITEM[{TollBudgetSystem.ItemId}]"] = "Toll Plazas";
                 strings[$"EconomyPanel.BUDGET_ITEM_DESCRIPTION[{TollBudgetSystem.ItemId}]"] =

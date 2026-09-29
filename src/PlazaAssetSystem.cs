@@ -64,6 +64,7 @@ namespace TollPlaza
             {
                 Mod.Log.Warn("[TollPlaza] 'RoadsServices' category not found - prefabs will register but won't show in a menu.");
             }
+            UIAssetCategoryPrefab menuTab = TollPlazasTab(prefabSystem, roadsServices) ?? roadsServices;
 
             // Compose and measure the plaza highways first: the islands must sit exactly on their medians.
             // Per booth count: the island piece, and the ends, which are the base game's one-way highway with
@@ -96,7 +97,9 @@ namespace TollPlaza
                 Mod.Log.Error(e, "[TollPlaza] Setting up the plaza highways failed");
             }
 
+            // In the tab: the working plazas first (smallest first), then the decorative ones.
             int priority = 1;
+            const int DecorativeAfter = 100;
             foreach (var plaza in PlazaCatalog.Plazas)
             {
                 try
@@ -129,10 +132,11 @@ namespace TollPlaza
                         : null;
                     if (roadMeshes != null)
                     {
-                        AddPlazaPrefab(prefabSystem, plaza.id + RoadSuffix, roadMeshes, roadsServices, priority++, roads, plaza.layout.LaneCount,
+                        AddPlazaPrefab(prefabSystem, plaza.id + RoadSuffix, roadMeshes, menuTab, priority, roads, plaza.layout.LaneCount,
                             WorkingCost(plaza.layout.LaneCount));
                     }
-                    AddPlazaPrefab(prefabSystem, plaza.id, meshes, roadsServices, priority++, null, 0, DecorativeCost(plaza.layout.LaneCount));
+                    AddPlazaPrefab(prefabSystem, plaza.id, meshes, menuTab, DecorativeAfter + priority, null, 0, DecorativeCost(plaza.layout.LaneCount));
+                    priority++;
                 }
                 catch (Exception e)
                 {
@@ -141,8 +145,48 @@ namespace TollPlaza
             }
         }
 
+        /// <summary>The Roads menu tab the plazas are in (localized as "Toll Plazas" in Mod.cs).</summary>
+        public const string TabName = "TollPlazas";
+
+        /// <summary>
+        /// A "Toll Plazas" tab in the Roads menu, right after Road Services (which was crowded with ten plazas beside
+        /// the maintenance depot). A tab is a UIAssetCategoryPrefab in the same menu; tabs are sorted by their
+        /// UIObject priority. Null if Road Services or its menu can't be found (the plazas then stay in Road Services).
+        /// </summary>
+        private static UIAssetCategoryPrefab TollPlazasTab(PrefabSystem prefabSystem, UIAssetCategoryPrefab roadsServices)
+        {
+            if (prefabSystem.TryGetPrefab(new PrefabID(nameof(UIAssetCategoryPrefab), TabName), out PrefabBase existing))
+            {
+                return existing as UIAssetCategoryPrefab; // added in a previous load
+            }
+            if (roadsServices?.m_Menu == null)
+            {
+                return null;
+            }
+            try
+            {
+                var tab = ScriptableObject.CreateInstance<UIAssetCategoryPrefab>();
+                tab.name = TabName;
+                tab.m_Menu = roadsServices.m_Menu;
+                var ui = tab.AddComponent<UIObject>();
+                ui.m_Icon = Mod.IconUri;
+                ui.m_Priority = (roadsServices.GetComponent<UIObject>()?.m_Priority ?? 0) + 1;
+                if (!prefabSystem.AddPrefab(tab))
+                {
+                    Mod.Log.Warn("[TollPlaza] Couldn't add the Toll Plazas tab; plazas stay in Road Services.");
+                    return null;
+                }
+                return tab;
+            }
+            catch (Exception e)
+            {
+                Mod.Log.Warn(e, "[TollPlaza] Couldn't add the Toll Plazas tab; plazas stay in Road Services.");
+                return null;
+            }
+        }
+
         /// <summary>Purchase price of a working plaza (with its road): a base for the building plus each booth.</summary>
-        public static uint WorkingCost(int booths) => 100000u + 25000u * (uint)booths;
+        public static uint WorkingCost(int booths) => 75000u + 15000u * (uint)booths;
 
         /// <summary>Purchase price of a decorative plaza (the model alone, no road or toll collection).</summary>
         public static uint DecorativeCost(int booths) => 15000u + 2500u * (uint)booths;
