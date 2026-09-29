@@ -785,6 +785,17 @@ namespace TollPlaza
                 Mod.Log.Info($"[TollPlaza] {PlazaNames.Shown(plaza)} booth {nearest + 1} lane {(close ? "closed" : "reopened")}: {OwnerName(lane)} at z {local.z:F1}"
                     + $"{(EntityManager.HasComponent<SlaveLane>(lane) ? ", slave lane" : string.Empty)}{(EntityManager.HasComponent<MasterLane>(lane) ? ", master lane" : string.Empty)}");
             }
+            else if (!close && boothSpeed && (carLane.m_Flags & Game.Net.CarLaneFlags.Forbidden) != 0)
+            {
+                // Still closed in the save (the game keeps lane data): closed lanes last only while the city is
+                // open, so open it again. The game never forbids a booth lane itself.
+                EntityManager.SetComponentData(lane, ClosedLaneSystem.Open(carLane));
+                if (!EntityManager.HasComponent<PathfindUpdated>(lane))
+                {
+                    EntityManager.AddComponent<PathfindUpdated>(lane);
+                }
+                Mod.Log.Info($"[TollPlaza] {PlazaNames.Shown(plaza)} booth {nearest + 1} lane was still closed from an earlier session: reopened");
+            }
             return nearest;
         }
 
