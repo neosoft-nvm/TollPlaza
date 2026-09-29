@@ -128,9 +128,6 @@ namespace TollPlaza
             public float PeakDecel;
             public bool Measured;
             public bool StopLogged;
-            // Sideways probe
-            public bool SidewaysLogged;
-            public bool SqueezeLogged;
         }
 
         private readonly Dictionary<(Entity vehicle, Entity plaza), Pass> m_Passes = new Dictionary<(Entity, Entity), Pass>();
@@ -274,7 +271,6 @@ namespace TollPlaza
                             HoldGate(vehicles[j], at.plaza);
                         }
                         MeasureBraking(vehicles[j], at.plaza, ref pass);
-                        ProbeSideways(vehicles[j], at.plaza, current[j], ref pass);
                         pass.LastSeen = m_Tick;
                         m_Passes[key] = pass;
                     }
@@ -285,18 +281,12 @@ namespace TollPlaza
                     {
                         for (int j = 0; j < trailers.Length; j++)
                         {
-                            if (!m_PlazaLanes.TryGetValue(trailerLanes[j].m_Lane, out var at))
-                            {
-                                continue;
-                            }
-                            if (at.boothLane || at.pastBooths)
+                            if (m_PlazaLanes.TryGetValue(trailerLanes[j].m_Lane, out var at) && (at.boothLane || at.pastBooths))
                             {
                                 HoldGate(trailers[j], at.plaza);
                             }
-                            AddSample(trailers[j], at.plaza);
                         }
                     }
-                    CheckSqueezes();
 
                     // Check: every vehicle leaving on the player's road past the exit should have paid.
                     for (int j = 0; j < vehicles.Length; j++)
@@ -360,7 +350,6 @@ namespace TollPlaza
                         + string.Join(", ", m_StopPlaces.OrderByDescending(p => p.Value).Select(p => $"{p.Key} {p.Value}")));
                     m_StopPlaces.Clear();
                     m_StopDetailsLogged = 0;
-                    m_SidewaysLogged = m_SqueezesLogged = 0;
                 }
             }
         }
@@ -524,209 +513,6 @@ namespace TollPlaza
             Mod.Log.Info($"[TollPlaza] Hard stop: {NameOf(vehicle)} at {place}, plaza-local x {local.x:F1} z {local.z:F1}, "
                 + $"speed {ShownMph(before):F0} > {ShownMph(after):F0} mph{(reversing ? ", REVERSING" : string.Empty)}; "
                 + $"blocked: {blocker}; {lanes}");
-        }
-
-        // ---- Sideways probe (temporary, to-do 12): cars turned across the lanes, and vehicles squeezed side by side ----
-
-        /// <summary>A car this far off the plaza's direction of travel is logged as sideways.</summary>
-        private const float SidewaysDegrees = 35f;
-        private const int SidewaysDetailsPerSummary = 8;
-        private int m_SidewaysLogged;
-        private int m_SqueezesLogged;
-        private int m_SidewaysCount, m_SqueezeCount;
-
-        // This update's vehicles on plaza lanes: plaza-local position, heading and size, for the squeeze check.
-        private readonly List<(Entity vehicle, Entity plaza, float3 local, float2 forward, float2 length, float halfWidth)> m_Samples =
-            new List<(Entity, Entity, float3, float2, float2, float)>();
-
-        private void ProbeSideways(Entity vehicle, Entity plaza, Game.Vehicles.CarCurrentLane lane, ref Pass pass)
-        {
-            PlazaLayout layout = LayoutOf(plaza);
-            if (layout == null || !EntityManager.HasComponent<Game.Objects.Transform>(vehicle) || !EntityManager.HasComponent<Game.Objects.Transform>(plaza))
-            {
-                return;
-            }
-            Game.Objects.Transform t = EntityManager.GetComponentData<Game.Objects.Transform>(plaza);
-            quaternion toLocal = math.inverse(t.m_Rotation);
-            Game.Objects.Transform v = EntityManager.GetComponentData<Game.Objects.Transform>(vehicle);
-            float3 local = math.mul(toLocal, v.m_Position - t.m_Position);
-            float3 heading = math.mul(toLocal, math.forward(v.m_Rotation));
-            float2 forward = math.normalizesafe(heading.xz);
-            float angle = math.degrees(math.acos(math.clamp(forward.y, -1f, 1f)));
-            float2 length = LengthOf(vehicle);
-            AddSample(vehicle, plaza);
-
-            if (angle < SidewaysDegrees || pass.SidewaysLogged)
-            {
-                return;
-            }
-            pass.SidewaysLogged = true;
-            m_SidewaysCount++;
-            string place = PlaceOf(layout, local.z);
-            m_StopPlaces.TryGetValue(place + " (sideways)", out int n);
-            m_StopPlaces[place + " (sideways)"] = n + 1;
-            if (m_SidewaysLogged >= SidewaysDetailsPerSummary)
-            {
-                return;
-            }
-            m_SidewaysLogged++;
-            Mod.Log.Info($"[TollPlaza] Sideways: {NameOf(vehicle)} ({length.y - length.x:F1} m) at {place}, plaza-local x {local.x:F1} z {local.z:F1}, "
-                + $"{angle:F0} deg off, {(local.x < 0 ? "left" : "right")} of center; speed {ShownMph(SpeedOf(vehicle)):F0} mph; "
-                + DescribeLanes(vehicle, plaza, layout, lane));
-        }
-
-        private void AddSample(Entity vehicle, Entity plaza)
-        {
-            if (!EntityManager.HasComponent<Game.Objects.Transform>(vehicle) || !EntityManager.HasComponent<Game.Objects.Transform>(plaza))
-            {
-                return;
-            }
-            Game.Objects.Transform t = EntityManager.GetComponentData<Game.Objects.Transform>(plaza);
-            quaternion toLocal = math.inverse(t.m_Rotation);
-            Game.Objects.Transform v = EntityManager.GetComponentData<Game.Objects.Transform>(vehicle);
-            float3 local = math.mul(toLocal, v.m_Position - t.m_Position);
-            float2 forward = math.normalizesafe(math.mul(toLocal, math.forward(v.m_Rotation)).xz);
-            m_Samples.Add((vehicle, plaza, local, forward, LengthOf(vehicle), HalfWidthOf(vehicle)));
-        }
-
-        /// <summary>The vehicle driving this one (a trailer's truck), or itself.</summary>
-        private Entity DriverOf(Entity vehicle) =>
-            EntityManager.HasComponent<Game.Vehicles.Controller>(vehicle) && EntityManager.GetComponentData<Game.Vehicles.Controller>(vehicle).m_Controller != Entity.Null
-                ? EntityManager.GetComponentData<Game.Vehicles.Controller>(vehicle).m_Controller
-                : vehicle;
-
-        /// <summary>
-        /// Vehicles overlapping side by side (closer across than their half widths allow while level along the
-        /// lane): what the player sees as a truck shoving a car into an occupied lane.
-        /// </summary>
-        private void CheckSqueezes()
-        {
-            for (int a = 0; a < m_Samples.Count; a++)
-            {
-                for (int b = a + 1; b < m_Samples.Count; b++)
-                {
-                    var s1 = m_Samples[a];
-                    var s2 = m_Samples[b];
-                    if (s1.plaza != s2.plaza || DriverOf(s1.vehicle) == DriverOf(s2.vehicle))
-                    {
-                        continue;
-                    }
-                    if (!m_Passes.ContainsKey((s1.vehicle, s1.plaza)))
-                    {
-                        (s1, s2) = (s2, s1); // log it against the driven vehicle, not a trailer
-                    }
-                    // Along the lane, the two bodies overlap; across, they're closer than their widths allow.
-                    bool level = s1.local.z + s1.length.x < s2.local.z + s2.length.y && s2.local.z + s2.length.x < s1.local.z + s1.length.y;
-                    float gap = math.abs(s1.local.x - s2.local.x) - s1.halfWidth - s2.halfWidth;
-                    if (!level || gap > -0.3f)
-                    {
-                        continue;
-                    }
-                    var key1 = (s1.vehicle, s1.plaza);
-                    if (!m_Passes.TryGetValue(key1, out Pass p1) || p1.SqueezeLogged)
-                    {
-                        continue;
-                    }
-                    p1.SqueezeLogged = true;
-                    m_Passes[key1] = p1;
-                    m_SqueezeCount++;
-                    PlazaLayout layout = LayoutOf(s1.plaza);
-                    string place = layout != null ? PlaceOf(layout, s1.local.z) : "?";
-                    m_StopPlaces.TryGetValue(place + " (squeezed)", out int n);
-                    m_StopPlaces[place + " (squeezed)"] = n + 1;
-                    if (m_SqueezesLogged >= SidewaysDetailsPerSummary || layout == null)
-                    {
-                        continue;
-                    }
-                    m_SqueezesLogged++;
-                    string Describe(Entity vehicle, float3 local, float2 forward, float2 length)
-                    {
-                        string lanes = EntityManager.HasComponent<Game.Vehicles.CarCurrentLane>(vehicle)
-                            ? DescribeLanes(vehicle, s1.plaza, layout, EntityManager.GetComponentData<Game.Vehicles.CarCurrentLane>(vehicle))
-                            : "?";
-                        return $"{NameOf(vehicle)} ({length.y - length.x:F1} m) x {local.x:F1} z {local.z:F1}, "
-                            + $"{math.degrees(math.acos(math.clamp(forward.y, -1f, 1f))):F0} deg off, speed {ShownMph(SpeedOf(vehicle)):F0} mph; {lanes}";
-                    }
-                    Mod.Log.Info($"[TollPlaza] Squeezed at {place}, overlapping {-gap:F1} m across: "
-                        + Describe(s1.vehicle, s1.local, s1.forward, s1.length) + " || " + Describe(s2.vehicle, s2.local, s2.forward, s2.length));
-                }
-            }
-            m_Samples.Clear();
-        }
-
-        /// <summary>Lane column the vehicle is on, the one it's changing to, the booth its route heads for, and the queue ahead.</summary>
-        private string DescribeLanes(Entity vehicle, Entity plaza, PlazaLayout layout, Game.Vehicles.CarCurrentLane lane)
-        {
-            string Column(Entity l) => m_PlazaLanes.TryGetValue(l, out var at) && at.plaza == plaza && at.booth >= 0 ? (at.booth + 1).ToString() : "-";
-
-            int targetBooth = -1;
-            if (EntityManager.HasBuffer<Game.Vehicles.CarNavigationLane>(vehicle))
-            {
-                foreach (Game.Vehicles.CarNavigationLane nav in EntityManager.GetBuffer<Game.Vehicles.CarNavigationLane>(vehicle, true))
-                {
-                    if (m_PlazaLanes.TryGetValue(nav.m_Lane, out var at) && at.plaza == plaza && at.boothLane && at.booth >= 0)
-                    {
-                        targetBooth = at.booth;
-                        break;
-                    }
-                }
-            }
-            if (targetBooth < 0 && EntityManager.HasBuffer<Game.Pathfind.PathElement>(vehicle))
-            {
-                DynamicBuffer<Game.Pathfind.PathElement> path = EntityManager.GetBuffer<Game.Pathfind.PathElement>(vehicle, true);
-                int start = EntityManager.GetComponentData<Game.Pathfind.PathOwner>(vehicle).m_ElementIndex;
-                for (int i = math.max(0, start); i < math.min(path.Length, start + RerouteLookAhead); i++)
-                {
-                    if (m_PlazaLanes.TryGetValue(path[i].m_Target, out var at) && at.plaza == plaza && at.boothLane && at.booth >= 0)
-                    {
-                        targetBooth = at.booth;
-                        break;
-                    }
-                }
-            }
-
-            // Vehicles ahead in the lane it's on (and how many are stopped).
-            int ahead = 0, stopped = 0;
-            if (EntityManager.HasBuffer<Game.Net.LaneObject>(lane.m_Lane))
-            {
-                foreach (Game.Net.LaneObject o in EntityManager.GetBuffer<Game.Net.LaneObject>(lane.m_Lane, true))
-                {
-                    if (o.m_LaneObject != vehicle && o.m_CurvePosition.y > lane.m_CurvePosition.x)
-                    {
-                        ahead++;
-                        if (!EntityManager.HasComponent<Game.Objects.Moving>(o.m_LaneObject) || math.length(EntityManager.GetComponentData<Game.Objects.Moving>(o.m_LaneObject).m_Velocity) < 0.5f)
-                        {
-                            stopped++;
-                        }
-                    }
-                }
-            }
-            return $"column {Column(lane.m_Lane)}"
-                + (lane.m_ChangeLane != Entity.Null ? $" changing to {Column(lane.m_ChangeLane)} ({lane.m_ChangeProgress:F2})" : string.Empty)
-                + $", route booth {(targetBooth >= 0 ? (targetBooth + 1).ToString() : "?")}, {ahead} ahead in lane ({stopped} stopped), "
-                + $"piece {OwnerName(lane.m_Lane)}, flags {lane.m_LaneFlags}";
-        }
-
-        private float SpeedOf(Entity vehicle) =>
-            EntityManager.HasComponent<Game.Objects.Moving>(vehicle) ? math.length(EntityManager.GetComponentData<Game.Objects.Moving>(vehicle).m_Velocity) : 0f;
-
-        private readonly Dictionary<Entity, float> m_HalfWidths = new Dictionary<Entity, float>();
-
-        private float HalfWidthOf(Entity vehicle)
-        {
-            if (!EntityManager.HasComponent<PrefabRef>(vehicle))
-            {
-                return 0.9f;
-            }
-            Entity prefab = EntityManager.GetComponentData<PrefabRef>(vehicle).m_Prefab;
-            if (!m_HalfWidths.TryGetValue(prefab, out float half))
-            {
-                half = EntityManager.HasComponent<ObjectGeometryData>(prefab)
-                    ? (EntityManager.GetComponentData<ObjectGeometryData>(prefab).m_Bounds.max.x - EntityManager.GetComponentData<ObjectGeometryData>(prefab).m_Bounds.min.x) * 0.5f
-                    : 0.9f;
-                m_HalfWidths[prefab] = half;
-            }
-            return half;
         }
 
         /// <summary>Which part of the plaza a plaza-local Z falls in.</summary>

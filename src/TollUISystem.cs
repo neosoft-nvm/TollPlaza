@@ -264,50 +264,6 @@ namespace TollPlaza
             }
             Mod.Log.Info($"[TollPlaza] Layout of {NameOf(plaza)} ({prefab.name}, {(PlazaNames.IsOutdated(plaza) ? "old" : "current")}): "
                 + string.Join(" | ", lines));
-
-            // Temporary (to-do 12): the car lanes the game built across each joint, start > end in plaza-local x/z,
-            // to see where a lane swings sideways (cars turned ~80 deg at the channel joint).
-            var joints = new HashSet<Entity>();
-            for (int i = 0; i < subNets.Length; i++)
-            {
-                Entity net = subNets[i].m_SubNet;
-                if (EntityManager.HasComponent<Game.Net.Edge>(net))
-                {
-                    Game.Net.Edge edge = EntityManager.GetComponentData<Game.Net.Edge>(net);
-                    joints.Add(edge.m_Start);
-                    joints.Add(edge.m_End);
-                }
-            }
-            string Xz(Unity.Mathematics.float3 p)
-            {
-                Unity.Mathematics.float3 l = Unity.Mathematics.math.mul(inverse, p - t.m_Position);
-                return $"{l.x:F1},{l.z:F1}";
-            }
-            foreach (Entity node in joints)
-            {
-                if (!EntityManager.HasBuffer<Game.Net.SubLane>(node) || !EntityManager.HasComponent<Game.Net.Node>(node))
-                {
-                    continue;
-                }
-                var nodeLanes = new List<string>();
-                foreach (Game.Net.SubLane sub in EntityManager.GetBuffer<Game.Net.SubLane>(node, true))
-                {
-                    Entity lane = sub.m_SubLane;
-                    if (!EntityManager.HasComponent<Game.Net.CarLane>(lane) || !EntityManager.HasComponent<Game.Net.Curve>(lane))
-                    {
-                        continue;
-                    }
-                    Colossal.Mathematics.Bezier4x3 b = EntityManager.GetComponentData<Game.Net.Curve>(lane).m_Bezier;
-                    string kind = EntityManager.HasComponent<Game.Net.MasterLane>(lane) ? "M" : EntityManager.HasComponent<Game.Net.SlaveLane>(lane) ? "s" : "p";
-                    nodeLanes.Add($"{kind} {Xz(b.a)}>{Xz(b.d)}");
-                }
-                if (nodeLanes.Count > 0)
-                {
-                    Unity.Mathematics.float3 at = EntityManager.GetComponentData<Game.Net.Node>(node).m_Position;
-                    Mod.Log.Info($"[TollPlaza] Joint lanes of {NameOf(plaza)} at z {Unity.Mathematics.math.mul(inverse, at - t.m_Position).z:F1} "
-                        + $"({Joined(node)} roads): " + string.Join("; ", nodeLanes));
-                }
-            }
         }
     }
 }
