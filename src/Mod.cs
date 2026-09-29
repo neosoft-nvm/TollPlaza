@@ -94,7 +94,8 @@ namespace TollPlaza
             Log.Info("[TollPlaza] OnDispose");
         }
 
-        // Front view of a plaza: green TOLL sign over the canopy with navy stripe, lane signs, booths on islands.
+        // Front view of a plaza: green TOLL sign over the canopy with navy stripe, booths on islands; two lanes
+        // closed (red X, gate down) and the right-most open (green arrow, gate rising).
         private const string IconSvg =
 @"<svg xmlns=""http://www.w3.org/2000/svg"" viewBox=""0 0 128 128"">
   <rect x=""34"" y=""2"" width=""60"" height=""22"" rx=""3"" fill=""#006b38""/>
@@ -112,9 +113,14 @@ namespace TollPlaza
   <rect x=""62.5"" y=""24"" width=""3"" height=""2"" fill=""#8a8f98""/>
   <rect x=""6"" y=""26"" width=""116"" height=""20"" rx=""2"" fill=""#dcdde0""/>
   <rect x=""6"" y=""26"" width=""116"" height=""6"" rx=""2"" fill=""#1a2e5c""/>
-  <rect x=""20"" y=""34"" width=""22"" height=""10"" rx=""1"" fill=""#5c338c""/>
-  <rect x=""53"" y=""34"" width=""22"" height=""10"" rx=""1"" fill=""#5c338c""/>
+  <rect x=""20"" y=""34"" width=""22"" height=""10"" rx=""1"" fill=""#222""/>
+  <rect x=""53"" y=""34"" width=""22"" height=""10"" rx=""1"" fill=""#222""/>
+  <g stroke=""#e03a2f"" stroke-width=""2.5"" stroke-linecap=""round"">
+    <path d=""M27 35.5 L35 42.5 M35 35.5 L27 42.5""/>
+    <path d=""M60 35.5 L68 42.5 M68 35.5 L60 42.5""/>
+  </g>
   <rect x=""86"" y=""34"" width=""22"" height=""10"" rx=""1"" fill=""#006b38""/>
+  <path d=""M97 36 L97 41 M94 39 L97 42 L100 39"" stroke=""#fff"" stroke-width=""2"" fill=""none"" stroke-linecap=""round"" stroke-linejoin=""round""/>
   <rect x=""10"" y=""46"" width=""6"" height=""52"" fill=""#e6e6e0""/>
   <rect x=""112"" y=""46"" width=""6"" height=""52"" fill=""#e6e6e0""/>
   <g fill=""#eee3cc"">
