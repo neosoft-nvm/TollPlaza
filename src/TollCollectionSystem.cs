@@ -251,6 +251,10 @@ namespace TollPlaza
                         {
                             continue;
                         }
+                        if (ClosedLaneSystem.Lanes.Contains(current[j].m_Lane) && m_EnteredClosed.Add(vehicles[j]) && m_EnteredClosed.Count <= 30)
+                        {
+                            LogEnteredClosed(vehicles[j], at.plaza, at.booth);
+                        }
                         var key = (vehicles[j], at.plaza);
                         m_Passes.TryGetValue(key, out Pass pass);
                         // Charged at the booth it drives through, like a real plaza, so the plaza's count always
@@ -863,6 +867,7 @@ namespace TollPlaza
                 }
                 m_PathSamples = PathSampleCount;
                 m_Sampled.Clear();
+                m_EnteredClosed.Clear();
             }
 
             int rerouted = 0;
@@ -896,7 +901,7 @@ namespace TollPlaza
                         near |= math.distancesq(c, transforms[j].m_Position) < radiusSq;
                     }
                     if (near && m_PathSamples > 0 && m_PlazaLanes.TryGetValue(current[j].m_Lane, out var on)
-                        && !on.boothLane && !on.pastBooths && m_Sampled.Add(vehicle))
+                        && !on.boothLane && !on.pastBooths && m_ClosedPlazas.Contains(on.plaza) && m_Sampled.Add(vehicle))
                     {
                         m_PathSamples--;
                         LogPlannedLanes(vehicle, on.plaza);
@@ -911,6 +916,10 @@ namespace TollPlaza
                     m_Rerouted.Add(vehicle);
                     m_Watch[vehicle] = (current[j].m_Lane, transforms[j].m_Position, owner.m_State, m_SimulationSystem.frameIndex);
                     rerouted++;
+                    if (m_ReroutedCount + rerouted <= 30)
+                    {
+                        Mod.Log.Info($"[TollPlaza] Lane check: rerouting {NameOf(vehicle)} on {LaneLabel(current[j].m_Lane)} at {PlaceNear(transforms[j].m_Position)}");
+                    }
                 }
             }
             if (rerouted > 0 && (m_ReroutedCount += rerouted) % 50 < rerouted)
@@ -962,6 +971,18 @@ namespace TollPlaza
             }
             lines.Sort(string.CompareOrdinal);
             Mod.Log.Info($"[TollPlaza] Lane check: {PlazaNames.Shown(plaza)} booth piece has {lines.Count} car lanes:\n    " + string.Join("\n    ", lines));
+        }
+
+        private readonly HashSet<Entity> m_EnteredClosed = new HashSet<Entity>();
+
+        private void LogEnteredClosed(Entity vehicle, Entity plaza, int booth)
+        {
+            string reroute = m_Watch.TryGetValue(vehicle, out var seen)
+                ? $"rerouted {(m_SimulationSystem.frameIndex - seen.since) / 60f:F1} s ago on {LaneLabel(seen.lane)} at {PlaceNear(seen.position)}"
+                : m_Rerouted.Contains(vehicle) ? "rerouted (no longer watched)" : "never rerouted";
+            Game.Pathfind.PathFlags state = EntityManager.HasComponent<Game.Pathfind.PathOwner>(vehicle)
+                ? EntityManager.GetComponentData<Game.Pathfind.PathOwner>(vehicle).m_State : 0;
+            Mod.Log.Info($"[TollPlaza] Lane check: {NameOf(vehicle)} drove into closed booth {booth + 1} of {PlazaNames.Shown(plaza)}: {reroute}, route {state}");
         }
 
         private void LogPlannedLanes(Entity vehicle, Entity plaza)
