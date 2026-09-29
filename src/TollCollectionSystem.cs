@@ -255,6 +255,13 @@ namespace TollPlaza
                         {
                             LogEnteredClosed(vehicles[j], at.plaza, at.booth);
                         }
+                        else if (at.boothLane && !ClosedLaneSystem.Lanes.Contains(current[j].m_Lane) && m_ClosedPlazas.Contains(at.plaza)
+                            && m_OpenBoothLogged < 12 && m_EnteredClosed.Add(vehicles[j]))
+                        {
+                            m_OpenBoothLogged++;
+                            Mod.Log.Info($"[TollPlaza] Lane check: {NameOf(vehicles[j])} drove into open booth {at.booth + 1}; its lane {LaneLabel(current[j].m_Lane)}");
+                            LogNewRoute(vehicles[j]);
+                        }
                         var key = (vehicles[j], at.plaza);
                         m_Passes.TryGetValue(key, out Pass pass);
                         // Charged at the booth it drives through, like a real plaza, so the plaza's count always
@@ -996,6 +1003,44 @@ namespace TollPlaza
             }
             feeds.Sort(string.CompareOrdinal);
             Mod.Log.Info($"[TollPlaza] Lane check: {PlazaNames.Shown(plaza)} lanes into each booth:\n    " + string.Join("\n    ", feeds));
+
+            // And where each booth lane leads, two steps on.
+            var leads = new List<string>();
+            foreach (var entry in m_PlazaLanes)
+            {
+                if (entry.Value.plaza != plaza || !entry.Value.boothLane || !EntityManager.Exists(entry.Key))
+                {
+                    continue;
+                }
+                var outOf = new List<string>();
+                foreach (Entity after in LanesOutOf(entry.Key, plaza))
+                {
+                    var on = LanesOutOf(after, plaza).Select(LaneLabel);
+                    outOf.Add($"{LaneLabel(after)}{GroupOf(after)} [to {string.Join(", ", on)}]");
+                }
+                leads.Add($"{LaneLabel(entry.Key)} -> {(outOf.Count == 0 ? "nothing" : string.Join("; ", outOf))}");
+            }
+            leads.Sort(string.CompareOrdinal);
+            Mod.Log.Info($"[TollPlaza] Lane check: {PlazaNames.Shown(plaza)} lanes out of each booth:\n    " + string.Join("\n    ", leads));
+        }
+
+        private string GroupOf(Entity lane) =>
+            EntityManager.HasComponent<MasterLane>(lane) ? $" (group {EntityManager.GetComponentData<MasterLane>(lane).m_Group})"
+            : EntityManager.HasComponent<SlaveLane>(lane) ? $" (group {EntityManager.GetComponentData<SlaveLane>(lane).m_Group})" : string.Empty;
+
+        private List<Entity> LanesOutOf(Entity lane, Entity plaza)
+        {
+            var result = new List<Entity>();
+            Game.Pathfind.PathNode end = EntityManager.GetComponentData<Lane>(lane).m_EndNode;
+            foreach (var entry in m_PlazaLanes)
+            {
+                if (entry.Value.plaza == plaza && entry.Key != lane && EntityManager.Exists(entry.Key)
+                    && EntityManager.GetComponentData<Lane>(entry.Key).m_StartNode.EqualsIgnoreCurvePos(end))
+                {
+                    result.Add(entry.Key);
+                }
+            }
+            return result;
         }
 
         private List<Entity> LanesInto(Entity lane, Entity plaza)
@@ -1015,7 +1060,7 @@ namespace TollPlaza
 
         private readonly HashSet<Entity> m_EnteredClosed = new HashSet<Entity>();
         private readonly HashSet<Entity> m_NewRouteSeen = new HashSet<Entity>();
-        private int m_NewRouteLogged;
+        private int m_NewRouteLogged, m_OpenBoothLogged;
 
         /// <summary>The plaza part of a rerouted vehicle's new route (navigation lanes and route steps).</summary>
         private void LogNewRoute(Entity vehicle)
