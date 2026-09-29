@@ -188,6 +188,8 @@ namespace TollPlaza
             m_Rerouted.Clear();
             m_ClosedVersion = -1;
             m_ReroutedCount = 0;
+            m_Watch.Clear();
+            m_WatchLogged = m_Vanished = m_WatchedDone = 0;
             m_Tick = 0;
             m_PendingCents = 0;
             m_ExitTotal = m_ExitMissed = 0;
@@ -830,6 +832,7 @@ namespace TollPlaza
 
             // Plazas with a closed lane.
             var centers = new List<float3>();
+            m_ClosedPlazas.Clear();
             foreach ((Entity edge, Entity plaza, bool booths) in m_TollEdges)
             {
                 if (booths && EntityManager.Exists(plaza) && EntityManager.HasComponent<Game.Objects.Transform>(plaza))
@@ -840,6 +843,7 @@ namespace TollPlaza
                         if (PlazaStats.IsClosedLane(plaza, lane))
                         {
                             centers.Add(EntityManager.GetComponentData<Game.Objects.Transform>(plaza).m_Position);
+                            m_ClosedPlazas.Add(plaza);
                             break;
                         }
                     }
@@ -851,6 +855,7 @@ namespace TollPlaza
             }
 
             int rerouted = 0;
+            CheckVanished();
             float radiusSq = RerouteRadiusMeters * RerouteRadiusMeters;
             using (NativeArray<Entity> vehicles = m_RerouteQuery.ToEntityArray(Allocator.Temp))
             using (NativeArray<Game.Objects.Transform> transforms = m_RerouteQuery.ToComponentDataArray<Game.Objects.Transform>(Allocator.Temp))
@@ -859,6 +864,17 @@ namespace TollPlaza
                 for (int j = 0; j < vehicles.Length; j++)
                 {
                     Entity vehicle = vehicles[j];
+                    // Diagnostics: follow rerouted vehicles until they're through or gone.
+                    if (m_Watch.TryGetValue(vehicle, out var seen))
+                    {
+                        Game.Pathfind.PathFlags state = EntityManager.GetComponentData<Game.Pathfind.PathOwner>(vehicle).m_State;
+                        m_Watch[vehicle] = (current[j].m_Lane, transforms[j].m_Position, state, seen.since);
+                        if ((state & (Game.Pathfind.PathFlags.Failed | Game.Pathfind.PathFlags.Stuck)) != 0 && m_WatchLogged < WatchLogLimit)
+                        {
+                            m_WatchLogged++;
+                            Mod.Log.Info($"[TollPlaza] Reroute check: {NameOf(vehicle)} route {state} on {OwnerName(current[j].m_Lane)} at {PlaceNear(transforms[j].m_Position)}");
+                        }
+                    }
                     if (m_Rerouted.Contains(vehicle) || ClosedLaneSystem.Lanes.Contains(current[j].m_Lane))
                     {
                         continue; // already done, or already in the closed lane: let it through
@@ -876,6 +892,7 @@ namespace TollPlaza
                     owner.m_State |= Game.Pathfind.PathFlags.Obsolete;
                     EntityManager.SetComponentData(vehicle, owner);
                     m_Rerouted.Add(vehicle);
+                    m_Watch[vehicle] = (current[j].m_Lane, transforms[j].m_Position, owner.m_State, m_SimulationSystem.frameIndex);
                     rerouted++;
                 }
             }
@@ -883,6 +900,74 @@ namespace TollPlaza
             {
                 Mod.Log.Info($"[TollPlaza] Rerouted {m_ReroutedCount} vehicles around closed booth lanes so far");
             }
+        }
+
+        // Diagnostics for closed lanes: rerouted vehicles are followed for a while, and any that fail to find a
+        // route, get stuck, or vanish (the game removes vehicles with no route or stuck too long) are logged.
+        private readonly Dictionary<Entity, (Entity lane, float3 position, Game.Pathfind.PathFlags state, uint since)> m_Watch =
+            new Dictionary<Entity, (Entity, float3, Game.Pathfind.PathFlags, uint)>();
+        private readonly List<Entity> m_ClosedPlazas = new List<Entity>();
+        private int m_WatchLogged, m_Vanished, m_WatchedDone;
+        private const int WatchLogLimit = 40;
+        private const uint WatchFrames = 60 * 90; // 90 s of game time
+
+        private void CheckVanished()
+        {
+            uint now = m_SimulationSystem.frameIndex;
+            var done = new List<Entity>();
+            foreach (var entry in m_Watch)
+            {
+                Entity vehicle = entry.Key;
+                bool gone = !EntityManager.Exists(vehicle) || EntityManager.HasComponent<Deleted>(vehicle);
+                if (gone)
+                {
+                    m_Vanished++;
+                    if (m_WatchLogged < WatchLogLimit)
+                    {
+                        m_WatchLogged++;
+                        Mod.Log.Info($"[TollPlaza] Reroute check: a rerouted vehicle vanished {(now - entry.Value.since) / 60f:F0} s after its reroute, "
+                            + $"last seen on {OwnerName(entry.Value.lane)} at {PlaceNear(entry.Value.position)}, route {entry.Value.state} "
+                            + $"({m_Vanished} vanished of {m_ReroutedCount} rerouted)");
+                    }
+                    done.Add(vehicle);
+                }
+                else if (now - entry.Value.since > WatchFrames)
+                {
+                    m_WatchedDone++;
+                    done.Add(vehicle);
+                }
+            }
+            foreach (Entity vehicle in done)
+            {
+                m_Watch.Remove(vehicle);
+            }
+        }
+
+        /// <summary>Where a position is, relative to the nearest plaza with a closed lane.</summary>
+        private string PlaceNear(float3 position)
+        {
+            Entity best = Entity.Null;
+            float bestSq = float.MaxValue;
+            foreach (Entity plaza in m_ClosedPlazas)
+            {
+                if (EntityManager.Exists(plaza) && EntityManager.HasComponent<Game.Objects.Transform>(plaza))
+                {
+                    float d = math.distancesq(EntityManager.GetComponentData<Game.Objects.Transform>(plaza).m_Position, position);
+                    if (d < bestSq)
+                    {
+                        bestSq = d;
+                        best = plaza;
+                    }
+                }
+            }
+            PlazaLayout layout = best == Entity.Null ? null : LayoutOf(best);
+            if (layout == null)
+            {
+                return "unknown place";
+            }
+            Game.Objects.Transform t = EntityManager.GetComponentData<Game.Objects.Transform>(best);
+            float3 local = math.mul(math.inverse(t.m_Rotation), position - t.m_Position);
+            return $"{PlazaNames.Shown(best)} {PlaceOf(layout, local.z)} (x {local.x:F1}, z {local.z:F1})";
         }
 
         private bool UsesClosedLane(Entity vehicle)
