@@ -735,7 +735,7 @@ namespace TollPlaza
             if (z < layout.ApproachStartZ) return "before the plaza";
             if (z < layout.ChannelStartZ)
             {
-                int piece = (int)((z - layout.ApproachStartZ) / (PlazaLayout.ApproachLength / PlazaLayout.ApproachPieces));
+                int piece = (int)((z - layout.ApproachStartZ) / PlazaLayout.StepLength);
                 return $"approach step {piece + 1}";
             }
             if (z < layout.IslandStartZ) return "channel";

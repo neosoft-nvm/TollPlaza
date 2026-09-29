@@ -391,22 +391,27 @@ namespace TollPlaza
         /// <summary>
         /// Straight highway before the islands, long enough to slow down and pick a booth lane. The game's cars
         /// brake at about 1 g at the last possible moment for a lower limit ahead, so the approach is cut into
-        /// short pieces whose speeds step down from the highway's to the zone speed (TollCollectionSystem):
-        /// many small, quick brakes that add up to a steady slowdown instead of one emergency stop.
+        /// pieces whose speeds step down from the highway's to the zone speed (TollCollectionSystem).
         /// </summary>
         public const float ApproachLength = 100f;
-        public const int ApproachPieces = 8;
         /// <summary>
-        /// Last approach pieces built as the raised-median road (without islands), so cars pick their booth
-        /// before them. Without them cars re-picked the shortest queue in the last 25 m and cut across. Built as
-        /// one piece with the islands, so it runs at the booth speeds; the speed steps end at the zone speed
-        /// where it starts.
+        /// The end of the approach built as the raised-median road (without islands), so cars pick their booth
+        /// before it. Without it cars re-picked the shortest queue in the last 25 m and cut across. Built as one
+        /// piece with the islands, so it runs at the booth speeds; the speed steps end at the zone speed where it
+        /// starts.
         /// </summary>
-        public const int ChannelPieces = 3;
-        /// <summary>Approach pieces with their own speed step (before the channel).</summary>
-        public const int StepPieces = ApproachPieces - ChannelPieces;
+        public const float ChannelLength = 37.5f;
+        /// <summary>
+        /// Approach pieces with their own speed step (before the channel). Each must be longer than the
+        /// transition the game builds where the plain highway meets the median road: about 12.3 m before that
+        /// joint (logged 2026-09-29). With 5 pieces of 12.5 m the transition swallowed the last piece and ran into
+        /// the joint before it, and cars there swung sideways (sideways probe: ~160 in 17 minutes, all at that spot).
+        /// </summary>
+        public const int StepPieces = 3;
+        /// <summary>Length of one speed step (about 20.8 m).</summary>
+        public const float StepLength = (ApproachLength - ChannelLength) / StepPieces;
         /// <summary>Plaza-local Z where the median road (channel, then islands) begins.</summary>
-        public float ChannelStartZ => IslandStartZ - ChannelPieces * (ApproachLength / ApproachPieces);
+        public float ChannelStartZ => IslandStartZ - ChannelLength;
 
         /// <summary>Plaza-local Z where the island piece (and the booth speeds) begins.</summary>
         public float IslandStartZ => -IslandLength * 0.5f - IslandNoseLength;
@@ -544,7 +549,7 @@ namespace TollPlaza
 
         /// <summary>
         /// The plaza's own road, straight pieces joined end to end: the approach (the base game's one-way
-        /// highway with as many lanes as the plaza has booths, cut into ApproachPieces speed steps), the island
+        /// highway with as many lanes as the plaza has booths, cut into StepPieces speed steps), the island
         /// piece (same lanes, a raised median under each island), and the same highway again for the exit. A 6-booth plaza has 6 lanes in and 6 out, so the
         /// player's matching highway connects straight on; merging down to fewer lanes is up to the player.
         /// </summary>
@@ -560,7 +565,7 @@ namespace TollPlaza
             var pieces = new List<(int lanes, RoadPiece kind, float length)>();
             for (int i = 0; i < StepPieces; i++)
             {
-                pieces.Add((LaneCount, RoadPiece.End, ApproachLength / ApproachPieces));
+                pieces.Add((LaneCount, RoadPiece.End, StepLength));
             }
             // Channel and islands are one piece: a joint between two median-road pieces becomes a junction
             // (painted arrows and X's) whose inner lanes the cars avoid.
