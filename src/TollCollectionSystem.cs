@@ -971,6 +971,40 @@ namespace TollPlaza
             }
             lines.Sort(string.CompareOrdinal);
             Mod.Log.Info($"[TollPlaza] Lane check: {PlazaNames.Shown(plaza)} booth piece has {lines.Count} car lanes:\n    " + string.Join("\n    ", lines));
+
+            // What leads into each booth lane, two steps back (route finding only sees plain and master lanes).
+            var feeds = new List<string>();
+            foreach (var entry in m_PlazaLanes)
+            {
+                if (entry.Value.plaza != plaza || !entry.Value.boothLane || !EntityManager.Exists(entry.Key))
+                {
+                    continue;
+                }
+                var into = new List<string>();
+                foreach (Entity before in LanesInto(entry.Key, plaza))
+                {
+                    var back = LanesInto(before, plaza).Select(LaneLabel);
+                    into.Add($"{LaneLabel(before)} [from {string.Join(", ", back)}]");
+                }
+                feeds.Add($"{LaneLabel(entry.Key)} <- {(into.Count == 0 ? "nothing" : string.Join("; ", into))}");
+            }
+            feeds.Sort(string.CompareOrdinal);
+            Mod.Log.Info($"[TollPlaza] Lane check: {PlazaNames.Shown(plaza)} lanes into each booth:\n    " + string.Join("\n    ", feeds));
+        }
+
+        private List<Entity> LanesInto(Entity lane, Entity plaza)
+        {
+            var result = new List<Entity>();
+            Game.Pathfind.PathNode start = EntityManager.GetComponentData<Lane>(lane).m_StartNode;
+            foreach (var entry in m_PlazaLanes)
+            {
+                if (entry.Value.plaza == plaza && entry.Key != lane && EntityManager.Exists(entry.Key)
+                    && EntityManager.GetComponentData<Lane>(entry.Key).m_EndNode.EqualsIgnoreCurvePos(start))
+                {
+                    result.Add(entry.Key);
+                }
+            }
+            return result;
         }
 
         private readonly HashSet<Entity> m_EnteredClosed = new HashSet<Entity>();
