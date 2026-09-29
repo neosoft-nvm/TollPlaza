@@ -787,8 +787,9 @@ namespace TollPlaza
             }
             else if (!close && boothSpeed && (carLane.m_Flags & Game.Net.CarLaneFlags.Forbidden) != 0)
             {
-                // Still closed in the save (the game keeps lane data): closed lanes last only while the city is
-                // open, so open it again. The game never forbids a booth lane itself.
+                // Still marked closed in the save (the game keeps lane data) but open in the toll data (closed
+                // booths are kept there, not in the save; see PlazaPersistence): open it again. The game never
+                // forbids a booth lane itself.
                 EntityManager.SetComponentData(lane, ClosedLaneSystem.Open(carLane));
                 if (!EntityManager.HasComponent<PathfindUpdated>(lane))
                 {

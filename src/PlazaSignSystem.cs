@@ -167,6 +167,11 @@ namespace TollPlaza
                     var led = new PlazaMeshBuilder();
                     layout.BuildClosedLaneLed(led, lane);
                     pieces.AddRange(PiecesOf(led, $"closedled|{id}|{lane}"));
+
+                    // Cones and a barricade in the lane ahead of the booth.
+                    var barrier = new PlazaMeshBuilder();
+                    layout.BuildClosedLaneBarrier(barrier, lane);
+                    pieces.AddRange(PiecesOf(barrier, $"closedbarrier|{id}|{lane}"));
                 }
 
                 int mph = isCash ? TollState.CashMph : TollState.EtcMph;

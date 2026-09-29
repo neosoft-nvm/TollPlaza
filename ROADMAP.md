@@ -97,6 +97,8 @@
 ## Next build
 - **Plazas can't be drawn over** (to-do 8): the game treats plain objects like props, so a road drawn across one quietly deleted it. Plazas now behave like buildings: the road tool shows its usual overlap error and won't build, and a plaza only goes when bulldozed. (`PlazaAssetSystem` clears the prefabs' Overridable flag after the game sets them up, on each city load.)
 - **Roads can't join the plaza between its ends** (screenshot 2026-09-29 00:11): the road tool let a street connect where two of the plaza's own road pieces meet (e.g. at the booths, under the canopy), as it does for any building's roads. `PlazaConnectionGuardSystem` marks such a preview road with the game's Error (red, won't build) and the overlap icon. The two ends, where the highway comes in and goes out, connect as before, and roads outside the plaza aren't affected. Only the tool preview is touched. Anarchy's "ignore errors" bypasses it, as it does every game error.
+- **Closed booths are remembered**: kept with the toll data on each save (`ModsData/TollPlaza/Cities/…`, not the save file), like the cash/E-Toll lanes: loading the city brings them back closed. Snapshots from older builds load with every booth open. At least one booth always stays open.
+- **Roadwork on a closed lane**: a taper of six orange traffic cones across the lane in the channel ahead of the booth, and a red and white striped barricade between the island noses, alongside the red X. Drawn like the other live signs (`PlazaLayout.BuildClosedLaneBarrier`), so nothing is placed in the city or saved, and it disappears when the booth reopens.
 - **Purchase prices**: a working plaza costs $100,000 + $25,000 per booth ($150k for 2 booths to $250k for 6); a decorative one $15,000 + $2,500 per booth. They were $1,000, the game's default. Its road pieces may add their own road cost on top. The log lists the road menus' prices once, for comparison.
 
 ## To do
@@ -113,6 +115,7 @@
 11. **Commit and push** to GitHub once stable (everything since fe00117 is uncommitted).
 
 ## Future (community requests)
+- **On hold: ramps along the entry slow-down** (only if players ask): roads can join a plaza only at its two ends (`PlazaConnectionGuardSystem`). The joins between the entry's speed steps could be opened up so a ramp can merge there (booths, channel and exit stay blocked). Not done by default: cars would merge into lanes that are braking and queueing, and each joint would become a junction with its own paving and arrows (cars avoided lanes when that happened on the first channel design).
 - **Open-road tolling gantries**: overhead readers, no booths, no slowdown.
 - **Dynamic pricing**: rates that change with time of day or congestion.
 - **Maintenance funding**: toll revenue that offsets highway upkeep, which the base game economy doesn't connect.

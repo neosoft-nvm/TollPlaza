@@ -68,7 +68,7 @@ namespace TollPlaza
         // The frames of the vehicles charged in the last minute (not saved).
         private readonly Queue<uint> m_Recent = new Queue<uint>();
 
-        /// <summary>A booth lane closed by the player (not saved): red X, gate down, traffic kept out.</summary>
+        /// <summary>A booth lane closed by the player (kept with the toll data, PlazaPersistence): red X, cones, traffic kept out.</summary>
         public bool Closed { get; set; }
 
         /// <summary>A booth lane's exit gate and signal (not saved).</summary>
