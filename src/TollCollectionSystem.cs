@@ -872,6 +872,18 @@ namespace TollPlaza
                 {
                     DumpBoothLanes(plaza);
                 }
+                // Experiment: have route finding re-read every lane of these plazas, in case what it holds for them is stale.
+                int refreshed = 0;
+                foreach (var entry in m_PlazaLanes)
+                {
+                    if (m_ClosedPlazas.Contains(entry.Value.plaza) && EntityManager.Exists(entry.Key)
+                        && !EntityManager.HasComponent<PathfindUpdated>(entry.Key))
+                    {
+                        EntityManager.AddComponent<PathfindUpdated>(entry.Key);
+                        refreshed++;
+                    }
+                }
+                Mod.Log.Info($"[TollPlaza] Lane check: {refreshed} plaza lanes handed to route finding again");
                 m_PathSamples = PathSampleCount;
                 m_Sampled.Clear();
                 m_EnteredClosed.Clear();
@@ -948,6 +960,18 @@ namespace TollPlaza
         private readonly HashSet<Entity> m_Sampled = new HashSet<Entity>();
         private const int PathSampleCount = 15;
 
+        private string LaneData(Entity lane)
+        {
+            if (!EntityManager.HasComponent<Game.Net.CarLane>(lane))
+            {
+                return string.Empty;
+            }
+            Game.Net.CarLane c = EntityManager.GetComponentData<Game.Net.CarLane>(lane);
+            string block = c.m_BlockageEnd >= c.m_BlockageStart ? $", BLOCKED {c.m_BlockageStart}-{c.m_BlockageEnd}" : string.Empty;
+            string access = c.m_AccessRestriction != Entity.Null ? $", access {c.m_AccessRestriction.Index}" : string.Empty;
+            return $" {{speed {c.m_SpeedLimit:F1}/{c.m_DefaultSpeedLimit:F1}{block}{access}{((c.m_Flags & Game.Net.CarLaneFlags.Forbidden) != 0 ? ", forbidden" : string.Empty)}}}";
+        }
+
         private string LaneLabel(Entity lane)
         {
             if (!m_PlazaLanes.TryGetValue(lane, out var at))
@@ -997,9 +1021,9 @@ namespace TollPlaza
                 foreach (Entity before in LanesInto(entry.Key, plaza))
                 {
                     var back = LanesInto(before, plaza).Select(LaneLabel);
-                    into.Add($"{LaneLabel(before)} [from {string.Join(", ", back)}]");
+                    into.Add($"{LaneLabel(before)}{LaneData(before)} [from {string.Join(", ", back)}]");
                 }
-                feeds.Add($"{LaneLabel(entry.Key)} <- {(into.Count == 0 ? "nothing" : string.Join("; ", into))}");
+                feeds.Add($"{LaneLabel(entry.Key)}{LaneData(entry.Key)} <- {(into.Count == 0 ? "nothing" : string.Join("; ", into))}");
             }
             feeds.Sort(string.CompareOrdinal);
             Mod.Log.Info($"[TollPlaza] Lane check: {PlazaNames.Shown(plaza)} lanes into each booth:\n    " + string.Join("\n    ", feeds));
@@ -1016,7 +1040,7 @@ namespace TollPlaza
                 foreach (Entity after in LanesOutOf(entry.Key, plaza))
                 {
                     var on = LanesOutOf(after, plaza).Select(LaneLabel);
-                    outOf.Add($"{LaneLabel(after)}{GroupOf(after)} [to {string.Join(", ", on)}]");
+                    outOf.Add($"{LaneLabel(after)}{GroupOf(after)}{LaneData(after)} [to {string.Join(", ", on)}]");
                 }
                 leads.Add($"{LaneLabel(entry.Key)} -> {(outOf.Count == 0 ? "nothing" : string.Join("; ", outOf))}");
             }
