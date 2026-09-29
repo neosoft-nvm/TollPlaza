@@ -94,9 +94,22 @@ namespace TollPlaza
             Log.Info("[TollPlaza] OnDispose");
         }
 
-        // Front view of a plaza: canopy with navy stripe, lane signs, three booths on islands.
+        // Front view of a plaza: green TOLL sign over the canopy with navy stripe, lane signs, booths on islands.
         private const string IconSvg =
 @"<svg xmlns=""http://www.w3.org/2000/svg"" viewBox=""0 0 128 128"">
+  <rect x=""34"" y=""2"" width=""60"" height=""22"" rx=""3"" fill=""#006b38""/>
+  <rect x=""36.5"" y=""4.5"" width=""55"" height=""17"" rx=""2"" fill=""none"" stroke=""#fff"" stroke-width=""1.5""/>
+  <g fill=""#fff"">
+    <rect x=""41"" y=""7"" width=""10"" height=""3""/>
+    <rect x=""44.5"" y=""7"" width=""3"" height=""12""/>
+    <rect x=""54"" y=""7"" width=""9"" height=""12"" rx=""3""/>
+    <rect x=""66"" y=""7"" width=""3"" height=""12""/>
+    <rect x=""66"" y=""16"" width=""9"" height=""3""/>
+    <rect x=""78"" y=""7"" width=""3"" height=""12""/>
+    <rect x=""78"" y=""16"" width=""9"" height=""3""/>
+  </g>
+  <rect x=""57"" y=""10"" width=""3"" height=""6"" rx=""1"" fill=""#006b38""/>
+  <rect x=""62.5"" y=""24"" width=""3"" height=""2"" fill=""#8a8f98""/>
   <rect x=""6"" y=""26"" width=""116"" height=""20"" rx=""2"" fill=""#dcdde0""/>
   <rect x=""6"" y=""26"" width=""116"" height=""6"" rx=""2"" fill=""#1a2e5c""/>
   <rect x=""20"" y=""34"" width=""22"" height=""10"" rx=""1"" fill=""#5c338c""/>
