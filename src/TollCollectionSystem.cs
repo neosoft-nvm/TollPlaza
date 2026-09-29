@@ -885,6 +885,12 @@ namespace TollPlaza
                     {
                         Game.Pathfind.PathFlags state = EntityManager.GetComponentData<Game.Pathfind.PathOwner>(vehicle).m_State;
                         m_Watch[vehicle] = (current[j].m_Lane, transforms[j].m_Position, state, seen.since);
+                        if ((state & (Game.Pathfind.PathFlags.Obsolete | Game.Pathfind.PathFlags.Pending)) == 0
+                            && m_NewRouteLogged < 12 && m_NewRouteSeen.Add(vehicle))
+                        {
+                            m_NewRouteLogged++;
+                            LogNewRoute(vehicle);
+                        }
                         if ((state & (Game.Pathfind.PathFlags.Failed | Game.Pathfind.PathFlags.Stuck)) != 0 && m_WatchLogged < WatchLogLimit)
                         {
                             m_WatchLogged++;
@@ -1008,6 +1014,37 @@ namespace TollPlaza
         }
 
         private readonly HashSet<Entity> m_EnteredClosed = new HashSet<Entity>();
+        private readonly HashSet<Entity> m_NewRouteSeen = new HashSet<Entity>();
+        private int m_NewRouteLogged;
+
+        /// <summary>The plaza part of a rerouted vehicle's new route (navigation lanes and route steps).</summary>
+        private void LogNewRoute(Entity vehicle)
+        {
+            var steps = new List<string>();
+            if (EntityManager.HasBuffer<Game.Vehicles.CarNavigationLane>(vehicle))
+            {
+                foreach (Game.Vehicles.CarNavigationLane lane in EntityManager.GetBuffer<Game.Vehicles.CarNavigationLane>(vehicle, true))
+                {
+                    if (m_PlazaLanes.ContainsKey(lane.m_Lane))
+                    {
+                        steps.Add($"nav {LaneLabel(lane.m_Lane)} ({lane.m_Flags})");
+                    }
+                }
+            }
+            if (EntityManager.HasBuffer<Game.Pathfind.PathElement>(vehicle))
+            {
+                DynamicBuffer<Game.Pathfind.PathElement> path = EntityManager.GetBuffer<Game.Pathfind.PathElement>(vehicle, true);
+                int start = math.max(0, EntityManager.GetComponentData<Game.Pathfind.PathOwner>(vehicle).m_ElementIndex);
+                for (int i = start; i < path.Length && i < start + 200; i++)
+                {
+                    if (m_PlazaLanes.ContainsKey(path[i].m_Target))
+                    {
+                        steps.Add($"path {LaneLabel(path[i].m_Target)}");
+                    }
+                }
+            }
+            Mod.Log.Info($"[TollPlaza] Lane check: {NameOf(vehicle)} new route through the plaza: {(steps.Count == 0 ? "none yet" : string.Join(" | ", steps))}");
+        }
 
         private void LogEnteredClosed(Entity vehicle, Entity plaza, int booth)
         {
