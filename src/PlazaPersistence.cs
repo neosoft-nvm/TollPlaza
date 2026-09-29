@@ -19,7 +19,7 @@ using UnityEngine;
 namespace TollPlaza
 {
     /// <summary>
-    /// Keeps toll rates, booth speeds, cash/E-Toll lanes and the revenue stats with each saved city, without
+    /// Keeps toll rates, booth speeds, cash/E-Toll lanes, closed booths and the revenue stats with each saved city, without
     /// writing anything into the save file itself: if the mod is removed or broken, saves load as if it was
     /// never there.
     ///
@@ -27,7 +27,7 @@ namespace TollPlaza
     /// named by the simulation frame the save was made at. Loading a save restores the snapshot made at the
     /// same frame, so going back to an older save brings back that save's numbers, not later ones. Plazas are
     /// matched by prefab and position (entity numbers change between loads). A save with no snapshot (made
-    /// before this version, or with the mod off) keeps the newest snapshot's rates, speeds and lanes but starts
+    /// before this version, or with the mod off) keeps the newest snapshot's rates, speeds, lanes and closed booths but starts
     /// its stats at zero.
     /// </summary>
     public partial class PlazaPersistence : GameSystemBase
@@ -95,6 +95,8 @@ namespace TollPlaza
             public string Prefab;
             public float X, Y, Z;
             public bool[] Cash;
+            /// <summary>Booth lanes closed by the player (0-based), or null.</summary>
+            public int[] Closed;
             public string Name;
             public StatsDto Stats;
             public Dictionary<int, StatsDto> Booths = new Dictionary<int, StatsDto>();
@@ -177,6 +179,7 @@ namespace TollPlaza
                     Y = at.y,
                     Z = at.z,
                     Cash = entry.Value.Cash,
+                    Closed = entry.Value.Booths.Where(b => b.Value.Closed).Select(b => b.Key).OrderBy(b => b).ToArray(),
                     Name = entry.Value.Name,
                     Stats = StatsDto.From(entry.Value),
                 };
@@ -303,6 +306,17 @@ namespace TollPlaza
                 PlazaStats stats = PlazaStats.Of(found.entity);
                 stats.Cash = dto.Cash;
                 stats.Name = dto.Name;
+                // Closed booths are a setting, like cash lanes: kept even from a snapshot of another save. The last
+                // booth always stays open (as in the info panel), so a bad file can't shut the plaza.
+                int[] closed = (dto.Closed ?? new int[0]).Where(l => l >= 0).Distinct().ToArray();
+                int booths = PlazaAssetSystem.PlazaLayouts.FirstOrDefault(p => p.Key.name == dto.Prefab).Value?.LaneCount ?? 0;
+                if (closed.Length < booths && closed.All(l => l < booths))
+                {
+                    foreach (int lane in closed)
+                    {
+                        stats.Booth(lane).Closed = true;
+                    }
+                }
                 if (exact)
                 {
                     dto.Stats?.To(stats);

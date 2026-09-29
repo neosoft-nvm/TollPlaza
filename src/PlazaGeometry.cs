@@ -26,6 +26,7 @@ namespace TollPlaza
         Asphalt,
         LaneMarking,
         GateArm,
+        ConeOrange,         // closed-lane cones (drawn only, PlazaSignSystem)
         // Sign faces: one quad each, UV-mapped 0..1 so the baked sign artwork fits exactly.
         SignFaceEtc,
         SignFaceCash,
@@ -148,6 +149,7 @@ namespace TollPlaza
                 case Paint.Asphalt: return new Color(0.27f, 0.27f, 0.28f, 1f);
                 case Paint.LaneMarking: return new Color(0.93f, 0.93f, 0.9f, 1f);
                 case Paint.GateArm: return new Color(0.85f, 0.1f, 0.08f, 1f);
+                case Paint.ConeOrange: return new Color(1.00f, 0.38f, 0.04f, 1f);
                 case Paint.SignFaceEtc: return new Color(0.36f, 0.20f, 0.55f, 1f);
                 case Paint.SignFaceCash:
                 case Paint.SignFaceRate:
@@ -943,6 +945,58 @@ namespace TollPlaza
             LaneLedCenter(lane, out float lx, out float ly, out float faceZ);
             b.Box(Paint.DarkMetal, new Vector3(lx - 0.31f, ly - 0.31f, faceZ - 0.185f), new Vector3(lx + 0.31f, ly + 0.31f, faceZ - 0.172f));
             BuildLedPattern(b, lx, ly, faceZ - 0.205f, closed: true);
+        }
+
+        /// <summary>
+        /// A closed booth lane's roadwork, drawn only while it's closed (PlazaSignSystem): a taper of traffic cones
+        /// across the lane in the channel ahead of the booth, and a red and white striped barricade across the lane
+        /// at the island noses. Decoration only: vehicles are kept out by route finding (ClosedLaneSystem).
+        /// </summary>
+        public void BuildClosedLaneBarrier(PlazaMeshBuilder b, int lane)
+        {
+            float cx = LaneCenterX(lane);
+            float left = cx - LaneWidth * 0.5f + 0.35f;
+            float right = cx + LaneWidth * 0.5f - 0.35f;
+
+            // Cones: from the lane's left edge well ahead of the booth, across to its right edge at the islands.
+            const int cones = 6;
+            float zFar = IslandStartZ - 16f;
+            float zNear = IslandStartZ - 1.5f;
+            for (int i = 0; i < cones; i++)
+            {
+                float t = i / (float)(cones - 1);
+                BuildCone(b, Mathf.Lerp(left, right, t), Mathf.Lerp(zFar, zNear, t));
+            }
+
+            // Barricade between the island noses: two white A-frame legs and two striped boards.
+            float bz = IslandStartZ + 0.6f;
+            float x0 = cx - LaneWidth * 0.5f + 0.2f;
+            float x1 = cx + LaneWidth * 0.5f - 0.2f;
+            foreach (float lx in new[] { x0 + 0.15f, x1 - 0.15f })
+            {
+                b.Box(Paint.SignWhite, new Vector3(lx - 0.04f, 0f, bz - 0.25f), new Vector3(lx + 0.04f, 0.04f, bz + 0.25f));
+                b.Box(Paint.SignWhite, new Vector3(lx - 0.035f, 0f, bz - 0.035f), new Vector3(lx + 0.035f, 1.15f, bz + 0.035f));
+            }
+            foreach (float top in new[] { 1.1f, 0.7f })
+            {
+                // Modelled upright so the stripes run along it (as the gate arm), then laid across the lane.
+                var pivot = new Vector3(x0, top, bz - 0.06f);
+                b.RotatedBox(Paint.GateArm, new Vector3(x0, top, bz - 0.06f), new Vector3(x0 + 0.22f, top + (x1 - x0), bz - 0.03f),
+                    pivot, Quaternion.Euler(0f, 0f, -90f));
+            }
+        }
+
+        /// <summary>One traffic cone (about 70 cm) standing on the road at (x, z): black base, orange body, white band.</summary>
+        private static void BuildCone(PlazaMeshBuilder b, float x, float z)
+        {
+            void Tier(Paint paint, float half, float y0, float y1) =>
+                b.Box(paint, new Vector3(x - half, y0, z - half), new Vector3(x + half, y1, z + half));
+            Tier(Paint.DarkMetal, 0.2f, 0f, 0.04f);
+            Tier(Paint.ConeOrange, 0.14f, 0.04f, 0.22f);
+            Tier(Paint.ConeOrange, 0.105f, 0.22f, 0.4f);
+            Tier(Paint.SignWhite, 0.085f, 0.4f, 0.5f);
+            Tier(Paint.ConeOrange, 0.065f, 0.5f, 0.62f);
+            Tier(Paint.ConeOrange, 0.035f, 0.62f, 0.7f);
         }
 
         /// <param name="z">Front of the LED pixels (they're 2 cm deep).</param>
