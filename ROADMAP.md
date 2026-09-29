@@ -95,6 +95,8 @@
 - **Closed lanes (verified 2026-09-28, 23:30)**: "Close lane" / "Open lane" per booth in the plaza info section (the last open booth stays open). A closed booth shows a red X in place of its arrow and a red signal. Route finding sees the closed booth lane as a crawling lane that costs more than any detour, handed to it directly every 32 frames (idea from Road Rules, see CREDITS.md). When a booth closes or opens, the plaza's lanes are re-read by route finding, since what it loads with the city can be stale. Cars already planning to use the booth are rerouted a second later, and again (up to 3 times) if the new route still uses it. Cars already committed to the booth drive through it. Nothing is saved; lanes left closed by earlier builds are reopened on load. Developed on `dev/closed-lanes`.
 
 ## Next build
+- **Plazas can't be drawn over** (to-do 8): the game treats plain objects like props, so a road drawn across one quietly deleted it. Plazas now behave like buildings: the road tool shows its usual overlap error and won't build, and a plaza only goes when bulldozed. (`PlazaAssetSystem` clears the prefabs' Overridable flag after the game sets them up, on each city load.)
+- **Purchase prices**: a working plaza costs $100,000 + $25,000 per booth ($150k for 2 booths to $250k for 6); a decorative one $15,000 + $2,500 per booth. They were $1,000, the game's default. Its road pieces may add their own road cost on top. The log lists the road menus' prices once, for comparison.
 
 ## To do
 2. **Preview export broken**: tools/PreviewExport fails loading a texture source (`TextureBaker.LoadDetail`, System.Drawing "Parameter is not valid"), so preview/plaza.html still shows the old short approach.
