@@ -817,7 +817,14 @@ namespace TollPlaza
         private const float RerouteRadiusMeters = 400f;
         // How many upcoming route steps are checked per vehicle (the plaza is near, so it's early in the route).
         private const int RerouteLookAhead = 64;
-        private readonly HashSet<Entity> m_Rerouted = new HashSet<Entity>();
+        // Rerouted vehicles: when last, and how many times (a new route can still use the closed lane if it was
+        // planned before route finding had the closure; those are rerouted again, a few times at most).
+        private readonly Dictionary<Entity, (uint frame, int tries)> m_Rerouted = new Dictionary<Entity, (uint, int)>();
+        private const int RerouteTries = 3;
+        private const uint RerouteRetryFrames = 180;
+        // Rerouting waits this long after a lane is closed, so route finding has the closure first.
+        private const uint RerouteDelayFrames = 60;
+        private uint m_ClosedChangedFrame;
         private int m_ClosedVersion = -1;
         private int m_ClosedChanges;
         private int m_ReroutedCount;
@@ -840,6 +847,7 @@ namespace TollPlaza
                 m_ClosedVersion = m_ClosedChanges;
                 m_Rerouted.Clear();
                 m_DumpPending = true;
+                m_ClosedChangedFrame = m_SimulationSystem.frameIndex;
             }
 
             // Plazas with a closed lane.
@@ -916,7 +924,10 @@ namespace TollPlaza
                             Mod.Log.Info($"[TollPlaza] Reroute check: {NameOf(vehicle)} route {state} on {OwnerName(current[j].m_Lane)} at {PlaceNear(transforms[j].m_Position)}");
                         }
                     }
-                    if (m_Rerouted.Contains(vehicle) || ClosedLaneSystem.Lanes.Contains(current[j].m_Lane))
+                    bool retry = m_Rerouted.TryGetValue(vehicle, out var before);
+                    if (m_SimulationSystem.frameIndex - m_ClosedChangedFrame < RerouteDelayFrames
+                        || (retry && (before.tries >= RerouteTries || m_SimulationSystem.frameIndex - before.frame < RerouteRetryFrames))
+                        || ClosedLaneSystem.Lanes.Contains(current[j].m_Lane))
                     {
                         continue; // already done, or already in the closed lane: let it through
                     }
@@ -938,7 +949,7 @@ namespace TollPlaza
                     Game.Pathfind.PathOwner owner = EntityManager.GetComponentData<Game.Pathfind.PathOwner>(vehicle);
                     owner.m_State |= Game.Pathfind.PathFlags.Obsolete;
                     EntityManager.SetComponentData(vehicle, owner);
-                    m_Rerouted.Add(vehicle);
+                    m_Rerouted[vehicle] = (m_SimulationSystem.frameIndex, retry ? before.tries + 1 : 1);
                     m_Watch[vehicle] = (current[j].m_Lane, transforms[j].m_Position, owner.m_State, m_SimulationSystem.frameIndex);
                     rerouted++;
                     if (m_ReroutedCount + rerouted <= 30)
@@ -1119,7 +1130,7 @@ namespace TollPlaza
         {
             string reroute = m_Watch.TryGetValue(vehicle, out var seen)
                 ? $"rerouted {(m_SimulationSystem.frameIndex - seen.since) / 60f:F1} s ago on {LaneLabel(seen.lane)} at {PlaceNear(seen.position)}"
-                : m_Rerouted.Contains(vehicle) ? "rerouted (no longer watched)" : "never rerouted";
+                : m_Rerouted.TryGetValue(vehicle, out var r) ? $"rerouted {r.tries}x (no longer watched)" : "never rerouted";
             Game.Pathfind.PathFlags state = EntityManager.HasComponent<Game.Pathfind.PathOwner>(vehicle)
                 ? EntityManager.GetComponentData<Game.Pathfind.PathOwner>(vehicle).m_State : 0;
             Mod.Log.Info($"[TollPlaza] Lane check: {NameOf(vehicle)} drove into closed booth {booth + 1} of {PlazaNames.Shown(plaza)}: {reroute}, route {state}");
