@@ -112,7 +112,8 @@
 8. **Plaza deleted silently**: the plaza disappears when a road is drawn through it. Warn or protect it instead.
 9. ~~Closed lanes~~: done 2026-09-28.
 10. **Bigger plazas**: 8, 10 and 12 booths.
-11. **Commit and push** to GitHub once stable (everything since fe00117 is uncommitted).
+11. ~~Commit and push~~: done, pushed after each verified step.
+12. **Vehicles squeezed side by side on the approach** (next session, reported 2026-09-29 ~01:00; screenshot `screenshots/Screenshot 2026-09-29 004821.png`): two vehicles drive into the plaza in parallel and one (mostly a semi truck, sometimes others) shoves into a lane another car already occupies; one ends up sideways across the lanes. Happens randomly, **not only after closing a booth**: the 00:52 build (no rerouting once a vehicle is on the plaza's road) didn't change it. Leads to check first: the game's lane-change and lane-reservation rules for long vehicles (trucks and trailers), `UpdateOptimalLane` re-picking the shortest booth queue on the approach (seen in the stop probe), and the 1:1:1 approach, where the approach steps are separate pieces, so each joint is a node lane cars can pick a new lane at. Research other mods (Traffic by krzychu124, lane-change handling) before deploying tests.
 
 ## Future (community requests)
 - **On hold: ramps along the entry slow-down** (only if players ask): roads can join a plaza only at its two ends (`PlazaConnectionGuardSystem`). The joins between the entry's speed steps could be opened up so a ramp can merge there (booths, channel and exit stay blocked). Not done by default: cars would merge into lanes that are braking and queueing, and each joint would become a junction with its own paving and arrows (cars avoided lanes when that happened on the first channel design).
