@@ -49,6 +49,7 @@ namespace TollPlaza
         private sealed class Gate
         {
             public LaneGate State;
+            public PlazaStats Booth; // closed: signal stays red
             public List<Piece> Red, Green;
             public Piece? Arm;
             public Vector3 Hinge;
@@ -160,6 +161,14 @@ namespace TollPlaza
                     MeshOf($"lane|{id}|{lane}", () => LaneMesh(layout, l)),
                     MaterialOf(isCash ? "lane|cash" : "lane|etc", () => SignArt.LaneSign(layout.LaneSignSize, isCash))));
 
+                // A closed lane's signal beside the sign: a red X over the model's green arrow.
+                if (PlazaStats.IsClosedLane(plaza, lane))
+                {
+                    var led = new PlazaMeshBuilder();
+                    layout.BuildClosedLaneLed(led, lane);
+                    pieces.AddRange(PiecesOf(led, $"closedled|{id}|{lane}"));
+                }
+
                 int mph = isCash ? TollState.CashMph : TollState.EtcMph;
                 pieces.Add(new Piece(
                     MeshOf($"speed|{id}|{lane}", () => SpeedMesh(layout, l)),
@@ -222,6 +231,7 @@ namespace TollPlaza
             }
             var gate = new Gate
             {
+                Booth = PlazaStats.Of(plaza).Booth(lane),
                 State = PlazaStats.Of(plaza).Booth(lane).Gate,
                 Red = Signal(false),
                 Green = Signal(true),
@@ -407,7 +417,7 @@ namespace TollPlaza
                         }
                         foreach (Gate gate in gates)
                         {
-                            foreach (Piece piece in gate.State.Green(now) ? gate.Green : gate.Red)
+                            foreach (Piece piece in !gate.Booth.Closed && gate.State.Green(now) ? gate.Green : gate.Red)
                             {
                                 Draw(piece, matrix, camera);
                             }
