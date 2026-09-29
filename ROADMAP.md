@@ -97,6 +97,8 @@
 ## Merged to main 2026-09-29 ~13:00 (dev/menu-tab)
 - **Own "Toll Plazas" tab** in the Roads menu, right after Road Services (which held ten plazas beside the maintenance depot): the 5 working plazas first, then the 5 decorative ones. A tab is a `UIAssetCategoryPrefab` in the Roads menu, sorted by its `UIObject` priority, with the plaza icon. If it can't be added, the plazas stay in Road Services.
 - **Prices set by the player**: working plazas 2 booths $75k, 4 $100k, 6 $125k (odd sizes halfway: 3 $87.5k, 5 $112.5k); for later sizes 8 $225k, 10 $255k, 12 $300k (were $150k–$250k). Decorative unchanged ($20k–$30k). For comparison (logged 2026-09-29): Road Maintenance Depot $75k, Stack Interchange $63.5k, parking halls $150k–$200k.
+- **Icons**: working plazas show the front-view plaza icon with a green TOLL sign over the canopy, red X signs over two closed lanes (gates down) and a green arrow over the right-most open lane (gate half up). Decorative plazas use a plainer navy-canopy icon with no sign, gates or lane signals, so the two kinds differ at a glance. Both are SVGs written to the mod's `Icons` folder at load (`Mod.cs`).
+- **Branches**: `main` is the tested state; new work and experiments go on `dev/next`.
 
 ## Merged to main 2026-09-29 ~10:05
 - **Approach steps 20.8 m** (3 steps, was 5 of 12.5 m): the transition the game builds where the plain approach meets the median road (~12.3 m before the joint) swallowed the whole last 12.5 m step and overlapped the joint before it. Approach (100 m) and channel (37.5 m) unchanged, so the plaza is the same size. Plazas placed before are flagged "old layout, re-place". Placed and played in game (a new 6-booth plaza, 09:44): traffic flows and pays (0 unpaid). It did **not** stop cars turning sideways at that joint (see Development).
@@ -118,7 +120,7 @@
 7b. ~~Gate light turns green too early~~: fixed 2026-09-28 with the animated gates (opens as the vehicle reaches the gate). Was: it goes green when the booth charges the vehicle, which happens as the vehicle enters the booth's road piece, well before it reaches the booth. Could go green when the vehicle is within a few meters of the booth instead (verified working otherwise, 17:58).
 8. ~~Plaza deleted silently~~: done 2026-09-29 (plazas block roads drawn over them; roads join only at the two ends).
 9. ~~Closed lanes~~: done 2026-09-28.
-10. **Bigger plazas**: 8, 10 and 12 booths.
+10. **Bigger plazas**: 8, 10 and 12 booths (prices already set: $225k, $255k, $300k).
 11. ~~Commit and push~~: done, pushed after each verified step.
 12. **Vehicles sideways / squeezed on the approach**: parked 2026-09-29, accepted as realistic last-minute lane changes. Notes under Development.
 
