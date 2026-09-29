@@ -64,6 +64,7 @@ namespace TollPlaza
             updateSystem.UpdateAt<PlazaPersistence>(SystemUpdatePhase.UIUpdate);
             updateSystem.UpdateAt<TollBudgetSystem>(SystemUpdatePhase.UIUpdate);
             updateSystem.UpdateAt<PlazaSignSystem>(SystemUpdatePhase.Rendering);
+            updateSystem.UpdateAt<PlazaConnectionGuardSystem>(SystemUpdatePhase.UIUpdate);
             updateSystem.UpdateAfter<ClosedLaneSystem, Game.Pathfind.LaneDataSystem>(SystemUpdatePhase.ModificationEnd);
         }
 

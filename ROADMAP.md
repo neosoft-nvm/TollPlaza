@@ -96,6 +96,7 @@
 
 ## Next build
 - **Plazas can't be drawn over** (to-do 8): the game treats plain objects like props, so a road drawn across one quietly deleted it. Plazas now behave like buildings: the road tool shows its usual overlap error and won't build, and a plaza only goes when bulldozed. (`PlazaAssetSystem` clears the prefabs' Overridable flag after the game sets them up, on each city load.)
+- **Roads can't join the plaza between its ends** (screenshot 2026-09-29 00:11): the road tool let a street connect where two of the plaza's own road pieces meet (e.g. at the booths, under the canopy), as it does for any building's roads. `PlazaConnectionGuardSystem` marks such a preview road with the game's Error (red, won't build) and the overlap icon. The two ends, where the highway comes in and goes out, connect as before, and roads outside the plaza aren't affected. Only the tool preview is touched. Anarchy's "ignore errors" bypasses it, as it does every game error.
 - **Purchase prices**: a working plaza costs $100,000 + $25,000 per booth ($150k for 2 booths to $250k for 6); a decorative one $15,000 + $2,500 per booth. They were $1,000, the game's default. Its road pieces may add their own road cost on top. The log lists the road menus' prices once, for comparison.
 
 ## To do
