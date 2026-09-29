@@ -828,6 +828,7 @@ namespace TollPlaza
             {
                 m_ClosedVersion = m_ClosedChanges;
                 m_Rerouted.Clear();
+                m_DumpPending = true;
             }
 
             // Plazas with a closed lane.
@@ -852,6 +853,16 @@ namespace TollPlaza
             if (centers.Count == 0)
             {
                 return;
+            }
+            if (m_DumpPending)
+            {
+                m_DumpPending = false;
+                foreach (Entity plaza in m_ClosedPlazas)
+                {
+                    DumpBoothLanes(plaza);
+                }
+                m_PathSamples = PathSampleCount;
+                m_Sampled.Clear();
             }
 
             int rerouted = 0;
@@ -884,6 +895,12 @@ namespace TollPlaza
                     {
                         near |= math.distancesq(c, transforms[j].m_Position) < radiusSq;
                     }
+                    if (near && m_PathSamples > 0 && m_PlazaLanes.TryGetValue(current[j].m_Lane, out var on)
+                        && !on.boothLane && !on.pastBooths && m_Sampled.Add(vehicle))
+                    {
+                        m_PathSamples--;
+                        LogPlannedLanes(vehicle, on.plaza);
+                    }
                     if (!near || !UsesClosedLane(vehicle))
                     {
                         continue;
@@ -900,6 +917,74 @@ namespace TollPlaza
             {
                 Mod.Log.Info($"[TollPlaza] Rerouted {m_ReroutedCount} vehicles around closed booth lanes so far");
             }
+        }
+
+        // Diagnostics for closed lanes: the booth piece's lanes, and which of the plaza's lanes some approaching
+        // vehicles plan to use, logged each time a lane is closed or reopened.
+        private bool m_DumpPending;
+        private int m_PathSamples;
+        private readonly HashSet<Entity> m_Sampled = new HashSet<Entity>();
+        private const int PathSampleCount = 15;
+
+        private string LaneLabel(Entity lane)
+        {
+            if (!m_PlazaLanes.TryGetValue(lane, out var at))
+            {
+                return $"#{lane.Index} (not a plaza lane: {OwnerName(lane)})";
+            }
+            string kind = EntityManager.HasComponent<MasterLane>(lane) ? "master"
+                : EntityManager.HasComponent<SlaveLane>(lane) ? "slave" : "plain";
+            string where = at.boothLane ? "booth piece" : at.pastBooths ? "exit" : "approach";
+            string closed = ClosedLaneSystem.Lanes.Contains(lane) ? " CLOSED" : string.Empty;
+            return $"#{lane.Index} {where} booth {at.booth + 1} {kind}{closed}";
+        }
+
+        private void DumpBoothLanes(Entity plaza)
+        {
+            Game.Objects.Transform t = EntityManager.GetComponentData<Game.Objects.Transform>(plaza);
+            quaternion inverse = math.inverse(t.m_Rotation);
+            var lines = new List<string>();
+            foreach (var entry in m_PlazaLanes)
+            {
+                Entity lane = entry.Key;
+                if (entry.Value.plaza != plaza || !entry.Value.boothLane || !EntityManager.Exists(lane))
+                {
+                    continue;
+                }
+                Bezier4x3 curve = EntityManager.GetComponentData<Curve>(lane).m_Bezier;
+                float3 a = math.mul(inverse, curve.a - t.m_Position);
+                float3 d = math.mul(inverse, curve.d - t.m_Position);
+                Game.Net.CarLane carLane = EntityManager.GetComponentData<Game.Net.CarLane>(lane);
+                string group = EntityManager.HasComponent<MasterLane>(lane)
+                    ? $" group {EntityManager.GetComponentData<MasterLane>(lane).m_Group} lanes {EntityManager.GetComponentData<MasterLane>(lane).m_MinIndex}-{EntityManager.GetComponentData<MasterLane>(lane).m_MaxIndex}"
+                    : EntityManager.HasComponent<SlaveLane>(lane) ? $" group {EntityManager.GetComponentData<SlaveLane>(lane).m_Group}" : string.Empty;
+                lines.Add($"{LaneLabel(lane)}{group}: x {a.x:F1} > {d.x:F1}, z {a.z:F1} > {d.z:F1}, speed {carLane.m_SpeedLimit:F1} (default {carLane.m_DefaultSpeedLimit:F1}), flags {carLane.m_Flags}");
+            }
+            lines.Sort(string.CompareOrdinal);
+            Mod.Log.Info($"[TollPlaza] Lane check: {PlazaNames.Shown(plaza)} booth piece has {lines.Count} car lanes:\n    " + string.Join("\n    ", lines));
+        }
+
+        private void LogPlannedLanes(Entity vehicle, Entity plaza)
+        {
+            var steps = new List<string>();
+            if (EntityManager.HasBuffer<Game.Vehicles.CarNavigationLane>(vehicle))
+            {
+                foreach (Game.Vehicles.CarNavigationLane lane in EntityManager.GetBuffer<Game.Vehicles.CarNavigationLane>(vehicle, true))
+                {
+                    steps.Add("nav " + LaneLabel(lane.m_Lane));
+                }
+            }
+            if (EntityManager.HasBuffer<Game.Pathfind.PathElement>(vehicle))
+            {
+                DynamicBuffer<Game.Pathfind.PathElement> path = EntityManager.GetBuffer<Game.Pathfind.PathElement>(vehicle, true);
+                int start = math.max(0, EntityManager.GetComponentData<Game.Pathfind.PathOwner>(vehicle).m_ElementIndex);
+                int end = math.min(path.Length, start + 12);
+                for (int i = start; i < end; i++)
+                {
+                    steps.Add("path " + LaneLabel(path[i].m_Target));
+                }
+            }
+            Mod.Log.Info($"[TollPlaza] Lane check: {NameOf(vehicle)} approaching {PlazaNames.Shown(plaza)} plans: {string.Join(" | ", steps)}");
         }
 
         // Diagnostics for closed lanes: rerouted vehicles are followed for a while, and any that fail to find a

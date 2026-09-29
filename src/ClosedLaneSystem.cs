@@ -25,6 +25,8 @@ namespace TollPlaza
         /// </summary>
         public const float ClosedSpeed = 0.1f;
 
+        private static int s_Applied;
+
         protected override void OnUpdate()
         {
             if (Lanes.Count == 0)
@@ -37,7 +39,13 @@ namespace TollPlaza
                 if (EntityManager.Exists(lane) && EntityManager.HasComponent<Game.Net.CarLane>(lane)
                     && EntityManager.HasComponent<PathfindUpdated>(lane) && !EntityManager.HasComponent<Deleted>(lane))
                 {
-                    EntityManager.SetComponentData(lane, Close(EntityManager.GetComponentData<Game.Net.CarLane>(lane)));
+                    Game.Net.CarLane before = EntityManager.GetComponentData<Game.Net.CarLane>(lane);
+                    EntityManager.SetComponentData(lane, Close(before));
+                    if (++s_Applied <= 20)
+                    {
+                        Mod.Log.Info($"[TollPlaza] Lane check: closed lane #{lane.Index} handed to route finding "
+                            + $"(speed {before.m_SpeedLimit:F1} > {ClosedSpeed}, flags {before.m_Flags})");
+                    }
                 }
             }
         }
