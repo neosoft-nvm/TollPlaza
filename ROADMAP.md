@@ -112,7 +112,7 @@
 6. ~~Booth signs follow the cash/E-Toll toggle~~: done 2026-09-28, gates too.
 7. ~~Speed signs follow the panel speeds~~: done 2026-09-28, rate sign too.
 7b. ~~Gate light turns green too early~~: fixed 2026-09-28 with the animated gates (opens as the vehicle reaches the gate). Was: it goes green when the booth charges the vehicle, which happens as the vehicle enters the booth's road piece, well before it reaches the booth. Could go green when the vehicle is within a few meters of the booth instead (verified working otherwise, 17:58).
-8. **Plaza deleted silently**: the plaza disappears when a road is drawn through it. Warn or protect it instead.
+8. ~~Plaza deleted silently~~: done 2026-09-29 (plazas block roads drawn over them; roads join only at the two ends).
 9. ~~Closed lanes~~: done 2026-09-28.
 10. **Bigger plazas**: 8, 10 and 12 booths.
 11. ~~Commit and push~~: done, pushed after each verified step.
