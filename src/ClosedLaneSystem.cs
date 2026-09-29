@@ -30,6 +30,9 @@ namespace TollPlaza
         /// </summary>
         public const float ClosedSpeed = 0.1f;
 
+        /// <summary>Extra route-finding cost of a closed lane, in each of time, behaviour, money and comfort.</summary>
+        private static readonly Unity.Mathematics.float4 ClosedCost = new Unity.Mathematics.float4(1000f);
+
         // How often closed lanes are handed to route finding again (frames).
         private const int ResendFrames = 32;
 
@@ -100,6 +103,9 @@ namespace TollPlaza
             PathSpecification specification = PathUtils.GetCarDriveSpecification(curve, Close(EntityManager.GetComponentData<Game.Net.CarLane>(lane)),
                 default(MasterLane), EntityManager.GetComponentData<CarLaneData>(prefab),
                 EntityManager.GetComponentData<PathfindCarData>(netLaneData.m_PathfindPrefab), 0, 0.01f);
+            // Costly whatever a driver weighs most (time, behaviour, money, comfort: drivers weigh them differently,
+            // and some barely weigh time, which the crawling speed alone makes costly).
+            specification.m_Costs.m_Value += ClosedCost;
 
             var action = new UpdateAction(1, Allocator.Persistent);
             action.m_UpdateData[0] = new UpdateActionData
