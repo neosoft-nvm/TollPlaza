@@ -185,8 +185,24 @@ namespace TollPlaza
             }
         }
 
-        /// <summary>Purchase price of a working plaza (with its road): a base for the building plus each booth.</summary>
-        public static uint WorkingCost(int booths) => 75000u + 15000u * (uint)booths;
+        // Working plaza prices set by the player for the even sizes (8-12 booths are for later sizes);
+        // an odd size costs halfway between its neighbours, and past 12 each booth adds $20k.
+        private static readonly uint[] s_EvenCosts = { 105000u, 150000u, 175000u, 225000u, 265000u, 305000u }; // 2, 4, ..., 12
+
+        /// <summary>Purchase price of a working plaza (with its road).</summary>
+        public static uint WorkingCost(int booths)
+        {
+            if (booths <= 2)
+            {
+                return s_EvenCosts[0];
+            }
+            if (booths > 12)
+            {
+                return s_EvenCosts[s_EvenCosts.Length - 1] + 20000u * (uint)(booths - 12);
+            }
+            int i = booths / 2 - 1;
+            return booths % 2 == 0 ? s_EvenCosts[i] : (s_EvenCosts[i] + s_EvenCosts[i + 1]) / 2;
+        }
 
         /// <summary>Purchase price of a decorative plaza (the model alone, no road or toll collection).</summary>
         public static uint DecorativeCost(int booths) => 15000u + 2500u * (uint)booths;
