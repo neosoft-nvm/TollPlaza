@@ -110,6 +110,9 @@
 - **Roadwork on a closed lane**: a taper of six orange traffic cones across the lane in the channel ahead of the booth, and a red and white striped barricade between the island noses, alongside the red X. Drawn like the other live signs (`PlazaLayout.BuildClosedLaneBarrier`), so nothing is placed in the city or saved, and it disappears when the booth reopens.
 - **Purchase prices**: a working plaza costs $100,000 + $25,000 per booth ($150k for 2 booths to $250k for 6); a decorative one $15,000 + $2,500 per booth. They were $1,000, the game's default. Its road pieces may add their own road cost on top. The log lists the road menus' prices once, for comparison.
 
+## Built on dev/next, not tested (2026-10-02)
+- **Crash-safe toll data**: each snapshot is written to a `.tmp` file and swapped in, so a crash or power loss mid-save can't leave a half-written file. If a snapshot is damaged anyway, loading skips it and takes the settings from the newest readable one instead of starting from defaults. Leftover `.tmp` files are cleared on the next save. (Idea from the unity-modding skill's safe-loading advice.)
+
 ## To do
 2. **Preview export broken**: tools/PreviewExport fails loading a texture source (`TextureBaker.LoadDetail`, System.Drawing "Parameter is not valid"), so preview/plaza.html still shows the old short approach.
 3. ~~6-booth plaza broken~~: fixed 2026-09-28 (built from the 5-lane highway, not the 1-lane one).

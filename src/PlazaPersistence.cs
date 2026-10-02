@@ -132,7 +132,7 @@ namespace TollPlaza
                 string folder = CityFolder(snapshot.City);
                 Directory.CreateDirectory(folder);
                 string path = Path.Combine(folder, snapshot.Frame.ToString("D10") + ".json");
-                File.WriteAllText(path, JsonConvert.SerializeObject(snapshot, Formatting.Indented));
+                WriteSafely(path, JsonConvert.SerializeObject(snapshot, Formatting.Indented));
                 Prune(folder);
                 Mod.Log.Info($"[TollPlaza] Saved toll data for '{saveName}' ({snapshot.Plazas.Count} plazas, "
                     + $"${snapshot.RevenueCents / 100.0:F2} total) to {path}");
@@ -192,11 +192,47 @@ namespace TollPlaza
             return snapshot;
         }
 
+        /// <summary>
+        /// Writes to a temporary file first and swaps it in, so a crash or power loss mid-write never leaves a
+        /// half-written snapshot behind (it leaves the .tmp, which Prune clears and loading ignores).
+        /// </summary>
+        private static void WriteSafely(string path, string json)
+        {
+            string temp = path + ".tmp";
+            File.WriteAllText(temp, json);
+            if (File.Exists(path))
+            {
+                File.Replace(temp, path, null);
+            }
+            else
+            {
+                File.Move(temp, path);
+            }
+        }
+
         private static void Prune(string folder)
         {
             foreach (string old in Directory.GetFiles(folder, "*.json").OrderByDescending(f => f).Skip(KeepSnapshots))
             {
                 File.Delete(old);
+            }
+            foreach (string temp in Directory.GetFiles(folder, "*.json.tmp"))
+            {
+                File.Delete(temp);
+            }
+        }
+
+        /// <summary>Reads a snapshot, or null (logged) if the file is damaged or unreadable.</summary>
+        private static Snapshot TryRead(string path)
+        {
+            try
+            {
+                return JsonConvert.DeserializeObject<Snapshot>(File.ReadAllText(path));
+            }
+            catch (Exception e)
+            {
+                Mod.Log.Warn($"[TollPlaza] Skipping unreadable toll data {path}: {e.Message}");
+                return null;
             }
         }
 
@@ -260,10 +296,24 @@ namespace TollPlaza
                 return;
             }
 
-            Snapshot snapshot = JsonConvert.DeserializeObject<Snapshot>(File.ReadAllText(chosen));
+            Snapshot snapshot = TryRead(chosen);
             if (snapshot == null)
             {
-                return;
+                // Damaged file: keep at least the settings from the newest readable snapshot.
+                exact = false;
+                foreach (string path in candidates.Where(c => c.path != chosen)
+                    .OrderByDescending(c => File.GetLastWriteTimeUtc(c.path)).Select(c => c.path))
+                {
+                    if ((snapshot = TryRead(path)) != null)
+                    {
+                        Mod.Log.Info($"[TollPlaza] Using settings from {path} instead");
+                        break;
+                    }
+                }
+                if (snapshot == null)
+                {
+                    return;
+                }
             }
             TollState.CarRateCents = snapshot.CarRateCents;
             TollState.TruckRateCents = snapshot.TruckRateCents;
