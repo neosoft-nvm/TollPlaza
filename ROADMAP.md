@@ -120,6 +120,8 @@
 - **One table for the city totals**: the control panel's "this month vs last" and "Vehicles charged (all time)" sections are now one table: Cars, Trucks, Buses, Exempt, All vehicles and Revenue, with This month, Last month, Change and All time columns.
 - **Reset a city's toll data** (Options > Toll Plaza, while a city is loaded, with a confirmation): "Reset counts and revenue" zeroes every plaza's and booth's months, the city totals, all-time vehicles and revenue (names, lanes and rates stay); "Reset all toll data" also clears plaza rates, names, cash/E-Toll lanes and closed booths, and puts the city's rates and speeds back to the Options defaults. Money already collected stays in the treasury. Save afterwards to keep it.
 
+- **Wrong-way roads at a plaza end** (screenshot 2026-10-02 09:44): when a plaza snaps onto a road end the game lines it up with the road but ignores its traffic direction, so a one-way highway drawn away from that point met the plaza head-on and both dead-ended. `PlazaDirectionSystem` checks each plaza's two ends every half second and reverses a wrong-way one-way road there (and the pieces continuing it) the way the road tool's replace mode does, as long as that stretch ends loose. If it reaches a junction or another building's road, the plaza preview turns red with the warning icon instead (`PlazaConnectionGuardSystem`), since reversing could break the network.
+
 ## To do
 2. **Preview export broken**: tools/PreviewExport fails loading a texture source (`TextureBaker.LoadDetail`, System.Drawing "Parameter is not valid"), so preview/plaza.html still shows the old short approach.
 3. ~~6-booth plaza broken~~: fixed 2026-09-28 (built from the 5-lane highway, not the 1-lane one).

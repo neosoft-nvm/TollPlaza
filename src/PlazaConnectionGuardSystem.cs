@@ -24,6 +24,8 @@ namespace TollPlaza
     {
         private EntityQuery m_TempEdges;
         private EntityQuery m_ToolErrors;
+        private EntityQuery m_TempPlazas;
+        private readonly HashSet<Entity> m_FlaggedPlazas = new HashSet<Entity>();
         private IconCommandSystem m_IconCommandSystem;
         private PrefabSystem m_PrefabSystem;
         private readonly HashSet<Entity> m_Flagged = new HashSet<Entity>();
@@ -36,7 +38,9 @@ namespace TollPlaza
             m_ToolErrors = GetEntityQuery(ComponentType.ReadOnly<ToolErrorData>());
             m_IconCommandSystem = World.GetOrCreateSystemManaged<IconCommandSystem>();
             m_PrefabSystem = World.GetOrCreateSystemManaged<PrefabSystem>();
-            RequireForUpdate(m_TempEdges);
+            m_TempPlazas = GetEntityQuery(ComponentType.ReadOnly<Temp>(), ComponentType.ReadOnly<Game.Objects.Object>(),
+                ComponentType.ReadOnly<PrefabRef>(), ComponentType.ReadOnly<Game.Net.SubNet>(), ComponentType.Exclude<Deleted>());
+            RequireAnyForUpdate(m_TempEdges, m_TempPlazas);
         }
 
         protected override void OnUpdate()
@@ -74,6 +78,47 @@ namespace TollPlaza
                 }
                 m_Flagged.IntersectWith(still);
             }
+            CheckPlazaPreviews();
+        }
+
+        /// <summary>
+        /// A plaza being placed onto the end of a one-way road that runs the other way: PlazaDirectionSystem reverses
+        /// that road after placing when its stretch ends loose. When the stretch reaches a junction it can't, so the
+        /// preview is marked as an error (red, won't build) with the warning icon at that end.
+        /// </summary>
+        private void CheckPlazaPreviews()
+        {
+            var still = new HashSet<Entity>();
+            using (NativeArray<Entity> plazas = m_TempPlazas.ToEntityArray(Allocator.Temp))
+            {
+                foreach (Entity plaza in plazas)
+                {
+                    if ((EntityManager.GetComponentData<Temp>(plaza).m_Flags & TempFlags.Delete) != 0 || !IsWorkingPlaza(plaza))
+                    {
+                        continue;
+                    }
+                    foreach ((Entity node, bool flowsOut) in PlazaDirectionSystem.Ends(EntityManager, plaza))
+                    {
+                        Entity real = EntityManager.HasComponent<Temp>(node) ? EntityManager.GetComponentData<Temp>(node).m_Original : node;
+                        if (PlazaDirectionSystem.Check(EntityManager, real, flowsOut, out _) != PlazaDirectionSystem.Result.Blocked)
+                        {
+                            continue;
+                        }
+                        still.Add(plaza);
+                        if (!EntityManager.HasComponent<Error>(plaza))
+                        {
+                            EntityManager.AddComponent<Error>(plaza);
+                            EntityManager.AddComponent<BatchesUpdated>(plaza);
+                        }
+                        if (m_FlaggedPlazas.Add(plaza))
+                        {
+                            AddIcon(plaza, real);
+                        }
+                        break;
+                    }
+                }
+            }
+            m_FlaggedPlazas.IntersectWith(still);
         }
 
         /// <summary>
