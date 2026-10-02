@@ -58,11 +58,13 @@ namespace TollPlaza
         /// <summary>Back to a new city's defaults (every city load starts here, then PlazaPersistence restores).</summary>
         public static void Reset()
         {
-            CarRateCents = DefaultCarRateCents;
-            TruckRateCents = DefaultTruckRateCents;
-            BusRateCents = DefaultBusRateCents;
-            CashMph = PlazaLayout.CashSpeedMph;
-            EtcMph = PlazaLayout.EtcSpeedMph;
+            // The starting rates and speeds from Options (Setting), else the built-in defaults.
+            Setting s = Mod.Settings;
+            CarRateCents = s != null ? Setting.Cents(s.CarRate) : DefaultCarRateCents;
+            TruckRateCents = s != null ? Setting.Cents(s.TruckRate) : DefaultTruckRateCents;
+            BusRateCents = s != null ? Setting.Cents(s.BusRate) : DefaultBusRateCents;
+            CashMph = s != null && s.CashMph > 0 ? s.CashMph : PlazaLayout.CashSpeedMph;
+            EtcMph = s != null && s.EtcMph > 0 ? s.EtcMph : PlazaLayout.EtcSpeedMph;
             RevenueCents = 0;
             Vehicles.Clear();
         }
@@ -255,10 +257,12 @@ namespace TollPlaza
                         // Charged at the booth it drives through, like a real plaza, so the plaza's count always
                         // matches its booths' (cars still queuing on the approach aren't counted yet). A vehicle
                         // first seen past the booths (the plaza was placed around it) pays there instead.
-                        if (!pass.Charged && (at.boothLane || at.pastBooths))
+                        if (!pass.Charged && (at.pastBooths || (at.boothLane && ReachedIslands(vehicles[j], at.plaza))))
                         {
                             Charge(vehicles[j], at.plaza, month, ref pass);
-                            if (at.boothLane && at.booth >= 0)
+                            // A vehicle first seen past the booths (a fast one, or one the plaza was placed around)
+                            // still went through one of them: it's credited to the booth its lane lines up with.
+                            if (at.booth >= 0)
                             {
                                 PlazaStats booth = PlazaStats.Of(at.plaza).Booth(at.booth);
                                 booth.Roll(month);
@@ -402,6 +406,24 @@ namespace TollPlaza
                 pass.SpeedAt = speed;
                 pass.SpeedTick = m_Tick;
             }
+        }
+
+        /// <summary>
+        /// Whether the vehicle's center is at or past the island noses. The booth piece starts with the channel
+        /// (before the islands), so being on its lanes isn't yet being at the booth.
+        /// </summary>
+        private bool ReachedIslands(Entity vehicle, Entity plaza)
+        {
+            PlazaLayout layout = LayoutOf(plaza);
+            if (layout == null || !EntityManager.HasComponent<Game.Objects.Transform>(vehicle)
+                || !EntityManager.HasComponent<Game.Objects.Transform>(plaza))
+            {
+                return true; // position unknown: count it on the booth piece, as before
+            }
+            Game.Objects.Transform t = EntityManager.GetComponentData<Game.Objects.Transform>(plaza);
+            float3 local = math.mul(math.inverse(t.m_Rotation),
+                EntityManager.GetComponentData<Game.Objects.Transform>(vehicle).m_Position - t.m_Position);
+            return local.z >= layout.IslandStartZ;
         }
 
         /// <summary>
@@ -1006,7 +1028,7 @@ namespace TollPlaza
         private void Charge(Entity vehicle, Entity plaza, int month, ref Pass pass)
         {
             VehicleClass cls = Classify(vehicle);
-            int cents = TollState.RateCents(cls);
+            int cents = PlazaStats.RateCents(plaza, cls);
             TollState.Vehicles[cls] = TollState.Count(cls) + 1;
 
             foreach (PlazaStats monthly in new[] { PlazaStats.Of(plaza), PlazaStats.City })

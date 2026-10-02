@@ -192,7 +192,8 @@ namespace TollPlaza
                 gates.Add(GateFor(plaza, layout, id, lane, isCash));
             }
 
-            int car = TollState.CarRateCents, truck = TollState.TruckRateCents, bus = TollState.BusRateCents;
+            int car = PlazaStats.RateCents(plaza, VehicleClass.Car), truck = PlazaStats.RateCents(plaza, VehicleClass.Truck),
+                bus = PlazaStats.RateCents(plaza, VehicleClass.Bus);
             pieces.Add(new Piece(
                 MeshOf($"rate|{id}", () => RateMesh(layout)),
                 MaterialOf($"rate|{car}|{truck}|{bus}", () => SignArt.RateSign(PlazaLayout.RateSignSize, car, truck, bus))));

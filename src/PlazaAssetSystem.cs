@@ -23,7 +23,19 @@ namespace TollPlaza
 
         protected override void OnUpdate()
         {
-            // All the work happens once, in OnGamePreload below.
+            // The prefabs are built once, in OnGamePreload below; here only Options price changes are applied.
+            if (PricesChanged)
+            {
+                PricesChanged = false;
+                try
+                {
+                    ApplyPrices();
+                }
+                catch (Exception e)
+                {
+                    Mod.Log.Warn("[TollPlaza] Couldn't apply the new plaza prices: " + e.Message);
+                }
+            }
         }
 
         // Preload runs after the game's own prefabs exist but before the city loads and the toolbar
@@ -185,23 +197,62 @@ namespace TollPlaza
             }
         }
 
-        // Working plaza prices set by the player for the even sizes (8-12 booths are for later sizes);
-        // an odd size costs halfway between its neighbours, and past 12 each booth adds $20k.
+        // Working plaza prices for the even sizes (8-12 booths are for later sizes); 2, 4 and 6 can be changed in
+        // Options (Setting). An odd size costs halfway between its neighbours, and past 12 each booth adds $20k.
         private static readonly uint[] s_EvenCosts = { 75000u, 100000u, 125000u, 225000u, 255000u, 300000u }; // 2, 4, ..., 12
+
+        private static uint[] EvenCosts()
+        {
+            uint[] costs = (uint[])s_EvenCosts.Clone();
+            Setting s = Mod.Settings;
+            if (s != null)
+            {
+                costs[0] = (uint)Math.Max(0, s.Price2);
+                costs[1] = (uint)Math.Max(0, s.Price4);
+                costs[2] = (uint)Math.Max(0, s.Price6);
+            }
+            return costs;
+        }
 
         /// <summary>Purchase price of a working plaza (with its road).</summary>
         public static uint WorkingCost(int booths)
         {
+            uint[] costs = EvenCosts();
             if (booths <= 2)
             {
-                return s_EvenCosts[0];
+                return costs[0];
             }
             if (booths > 12)
             {
-                return s_EvenCosts[s_EvenCosts.Length - 1] + 20000u * (uint)(booths - 12);
+                return costs[costs.Length - 1] + 20000u * (uint)(booths - 12);
             }
             int i = booths / 2 - 1;
-            return booths % 2 == 0 ? s_EvenCosts[i] : (s_EvenCosts[i] + s_EvenCosts[i + 1]) / 2;
+            return booths % 2 == 0 ? costs[i] : (costs[i] + costs[i + 1]) / 2;
+        }
+
+        /// <summary>Set when the Options prices change; the new prices are applied on the next update.</summary>
+        public static bool PricesChanged;
+
+        /// <summary>Puts the current prices on the working plazas' prefabs, so the next one placed costs the new price.</summary>
+        private void ApplyPrices()
+        {
+            var prefabSystem = World.GetOrCreateSystemManaged<PrefabSystem>();
+            foreach (KeyValuePair<PrefabBase, PlazaLayout> entry in PlazaLayouts)
+            {
+                uint cost = WorkingCost(entry.Value.LaneCount);
+                PlaceableObject placeable = entry.Key.GetComponent<PlaceableObject>();
+                if (placeable != null)
+                {
+                    placeable.m_ConstructionCost = cost;
+                }
+                if (prefabSystem.TryGetEntity(entry.Key, out Entity entity) && EntityManager.HasComponent<PlaceableObjectData>(entity))
+                {
+                    PlaceableObjectData data = EntityManager.GetComponentData<PlaceableObjectData>(entity);
+                    data.m_ConstructionCost = cost;
+                    EntityManager.SetComponentData(entity, data);
+                }
+            }
+            Mod.Log.Info($"[TollPlaza] Plaza prices: 2 booths ${WorkingCost(2)}, 4 ${WorkingCost(4)}, 6 ${WorkingCost(6)}");
         }
 
         /// <summary>Purchase price of a decorative plaza (the model alone, no road or toll collection).</summary>

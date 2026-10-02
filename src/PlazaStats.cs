@@ -149,6 +149,30 @@ namespace TollPlaza
                 : layout.IsCashLane(lane);
         }
 
+        /// <summary>The plaza's own car, truck and bus rates in cents (kept with the toll data), or null to
+        /// use the city-wide rates from the control panel.</summary>
+        public int[] Rates;
+
+        /// <summary>What a vehicle pays at this plaza: its own rates if set, else the city's.</summary>
+        public static int RateCents(Entity plaza, VehicleClass c)
+        {
+            if (c == VehicleClass.Exempt)
+            {
+                return 0;
+            }
+            if (s_Plazas.TryGetValue(plaza, out PlazaStats stats) && stats.Rates != null && stats.Rates.Length == 3)
+            {
+                return stats.Rates[c == VehicleClass.Truck ? 1 : c == VehicleClass.Bus ? 2 : 0];
+            }
+            return TollState.RateCents(c);
+        }
+
+        /// <summary>A toll between $0 and $100, as the control panel allows.</summary>
+        public static int ClampRate(int cents) => cents < 0 ? 0 : (cents > 10000 ? 10000 : cents);
+
+        public static bool HasOwnRates(Entity plaza) =>
+            s_Plazas.TryGetValue(plaza, out PlazaStats stats) && stats.Rates != null && stats.Rates.Length == 3;
+
         public static bool IsClosedLane(Entity plaza, int lane) =>
             s_Plazas.TryGetValue(plaza, out PlazaStats stats) && stats.m_Booths.TryGetValue(lane, out PlazaStats booth) && booth.Closed;
 
