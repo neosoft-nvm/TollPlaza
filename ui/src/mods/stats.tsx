@@ -33,18 +33,25 @@ const Change = ({ now, before }: { now: number; before: number }) => {
     return <span className={`${styles.change} ${cls}`}>{pct > 0 ? "+" : ""}{pct}%</span>;
 };
 
-const CompareRow = ({ label, now, before, format }:
-    { label: string; now: number; before: number; format: (n: number) => string }) => (
+const CompareRow = ({ label, now, before, format, allTime }:
+    { label: string; now: number; before: number; format: (n: number) => string; allTime?: number }) => (
     <div className={styles.compareRow}>
         <span className={styles.label}>{label}</span>
         <span className={styles.num}>{format(now)}</span>
         <span className={styles.num}>{format(before)}</span>
         <Change now={now} before={before} />
+        {allTime !== undefined && <span className={styles.num}>{format(allTime)}</span>}
     </div>
 );
 
-/** This month vs last month: vehicles by type and revenue, with the change in percent. */
-export const MonthCompare = ({ stats }: { stats: MonthPair }) => {
+/** All-time totals for the extra column in the control panel (same rows as a month). */
+export type AllTime = Month;
+
+/**
+ * This month vs last month: vehicles by type and revenue, with the change in percent; with allTime, a fourth
+ * "All time" column too (the control panel's city totals).
+ */
+export const MonthCompare = ({ stats, allTime }: { stats: MonthPair; allTime?: AllTime }) => {
     const a = stats.thisMonth, b = stats.lastMonth;
     const total = (m: Month) => m.cars + m.trucks + m.buses + m.exempt;
     return (
@@ -54,13 +61,15 @@ export const MonthCompare = ({ stats }: { stats: MonthPair }) => {
                 <span className={styles.num}>This month</span>
                 <span className={styles.num}>Last month</span>
                 <span className={styles.change}>Change</span>
+                {allTime && <span className={styles.num}>All time</span>}
             </div>
-            <CompareRow label="Cars" now={a.cars} before={b.cars} format={count} />
-            <CompareRow label="Trucks" now={a.trucks} before={b.trucks} format={count} />
-            <CompareRow label="Buses" now={a.buses} before={b.buses} format={count} />
-            <CompareRow label="Exempt" now={a.exempt} before={b.exempt} format={count} />
-            <CompareRow label="All vehicles" now={total(a)} before={total(b)} format={count} />
-            <CompareRow label="Revenue" now={a.cents} before={b.cents} format={dollars} />
+            <CompareRow label="Cars" now={a.cars} before={b.cars} format={count} allTime={allTime?.cars} />
+            <CompareRow label="Trucks" now={a.trucks} before={b.trucks} format={count} allTime={allTime?.trucks} />
+            <CompareRow label="Buses" now={a.buses} before={b.buses} format={count} allTime={allTime?.buses} />
+            <CompareRow label="Exempt" now={a.exempt} before={b.exempt} format={count} allTime={allTime?.exempt} />
+            <CompareRow label="All vehicles" now={total(a)} before={total(b)} format={count}
+                allTime={allTime && total(allTime)} />
+            <CompareRow label="Revenue" now={a.cents} before={b.cents} format={dollars} allTime={allTime?.cents} />
         </div>
     );
 };

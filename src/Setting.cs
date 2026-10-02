@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using Colossal;
 using Colossal.IO.AssetDatabase;
+using Game;
 using Game.Modding;
 using Game.Settings;
 using Game.UI;
@@ -13,13 +14,14 @@ namespace TollPlaza
     /// here only seed cities without toll data of their own; a city's panel settings still win.
     /// </summary>
     [FileLocation(nameof(TollPlaza))]
-    [SettingsUIGroupOrder(PricesGroup, DefaultsGroup, ResetGroup)]
-    [SettingsUIShowGroupName(PricesGroup, DefaultsGroup)]
+    [SettingsUIGroupOrder(PricesGroup, DefaultsGroup, CityGroup, ResetGroup)]
+    [SettingsUIShowGroupName(PricesGroup, DefaultsGroup, CityGroup, ResetGroup)]
     public class Setting : ModSetting
     {
         public const string Section = "Main";
         public const string PricesGroup = "Prices";
         public const string DefaultsGroup = "NewCities";
+        public const string CityGroup = "CityData";
         public const string ResetGroup = "Reset";
 
         public Setting(IMod mod) : base(mod)
@@ -60,6 +62,34 @@ namespace TollPlaza
         [SettingsUISection(Section, DefaultsGroup)]
         [SettingsUISlider(min = 5, max = 70, step = 5, unit = Unit.kInteger)]
         public int EtcMph { get; set; }
+
+        /// <summary>Set by the city reset buttons; carried out on the next update in a loaded city (TollUISystem).</summary>
+        public static CityReset PendingReset;
+
+        private static bool InCity() => Game.SceneFlow.GameManager.instance?.gameMode.IsGame() == true;
+
+        public enum CityReset
+        {
+            None,
+            Counts,
+            Everything,
+        }
+
+        [SettingsUISection(Section, CityGroup)]
+        [SettingsUIButton]
+        [SettingsUIConfirmation(null, null)]
+        public bool ResetCityCounts
+        {
+            set { PendingReset = InCity() ? CityReset.Counts : CityReset.None; }
+        }
+
+        [SettingsUISection(Section, CityGroup)]
+        [SettingsUIButton]
+        [SettingsUIConfirmation(null, null)]
+        public bool ResetCityEverything
+        {
+            set { PendingReset = InCity() ? CityReset.Everything : CityReset.None; }
+        }
 
         [SettingsUISection(Section, ResetGroup)]
         [SettingsUIButton]
@@ -107,7 +137,15 @@ namespace TollPlaza
                 { s.GetOptionTabLocaleID(Setting.Section), "Settings" },
                 { s.GetOptionGroupLocaleID(Setting.PricesGroup), "Working plaza prices (odd sizes cost halfway between)" },
                 { s.GetOptionGroupLocaleID(Setting.DefaultsGroup), "New cities: starting toll rates ($) and lane speeds (mph)" },
-                { s.GetOptionGroupLocaleID(Setting.ResetGroup), "Reset" },
+                { s.GetOptionGroupLocaleID(Setting.CityGroup), "This city's toll data (works while a city is loaded)" },
+                { s.GetOptionGroupLocaleID(Setting.ResetGroup), "Settings on this page" },
+
+                { s.GetOptionLabelLocaleID(nameof(Setting.ResetCityCounts)), "Reset counts and revenue" },
+                { s.GetOptionDescLocaleID(nameof(Setting.ResetCityCounts)), "Starts this city's toll numbers over: vehicles charged (this month, last month and all time), revenue collected, and every plaza's and booth's numbers. Plaza names, lanes and rates stay. Money already collected stays in the city's treasury. Save the city afterwards to keep the reset." },
+                { s.GetOptionWarningLocaleID(nameof(Setting.ResetCityCounts)), "Reset this city's toll counts and revenue to zero?" },
+                { s.GetOptionLabelLocaleID(nameof(Setting.ResetCityEverything)), "Reset all toll data" },
+                { s.GetOptionDescLocaleID(nameof(Setting.ResetCityEverything)), "Starts this city's tolls over completely: the counts and revenue, plus every plaza's own rates, names, cash/E-Toll lanes and closed booths, and the city's toll rates and lane speeds (back to the defaults above). Placed plazas stay. Save the city afterwards to keep the reset." },
+                { s.GetOptionWarningLocaleID(nameof(Setting.ResetCityEverything)), "Reset ALL of this city's toll data, including plaza names, rates and lanes?" },
 
                 { s.GetOptionLabelLocaleID(nameof(Setting.Price2)), "2-booth plaza" },
                 { s.GetOptionDescLocaleID(nameof(Setting.Price2)), "Purchase price of the 2-booth plaza with road. The 3-booth plaza costs halfway between this and the 4-booth price." },

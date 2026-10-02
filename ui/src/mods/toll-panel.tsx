@@ -10,6 +10,7 @@ const group = "tollPlaza";
 const plazas$ = bindValue<number>(group, "plazas", 0);
 const boothLanes$ = bindValue<number>(group, "boothLanes", 0);
 const revenue$ = bindValue<string>(group, "revenue", "$0.00");
+const revenueCents$ = bindValue<number>(group, "revenueCents", 0);
 const cars$ = bindValue<number>(group, "cars", 0);
 const trucks$ = bindValue<number>(group, "trucks", 0);
 const buses$ = bindValue<number>(group, "buses", 0);
@@ -107,6 +108,7 @@ export const TollPanel = () => {
     const plazas = useValue(plazas$);
     const boothLanes = useValue(boothLanes$);
     const revenue = useValue(revenue$);
+    const revenueCents = useValue(revenueCents$);
     const cars = useValue(cars$);
     const trucks = useValue(trucks$);
     const buses = useValue(buses$);
@@ -132,8 +134,9 @@ export const TollPanel = () => {
                         <Row label="Revenue collected" value={revenue} />
                     </div>
                     <div className={styles.section}>
-                        <div className={styles.heading}>All plazas — this month vs last</div>
-                        <MonthCompare stats={months} />
+                        <div className={styles.heading}>Vehicles charged and revenue, all plazas</div>
+                        <MonthCompare stats={months}
+                            allTime={{ cars, trucks, buses, exempt, cents: revenueCents }} />
                     </div>
                     <div className={styles.section}>
                         <div className={styles.heading}>Your toll plazas (click to go there)</div>
@@ -152,13 +155,7 @@ export const TollPanel = () => {
                             </Button>
                         ))}
                     </div>
-                    <div className={styles.section}>
-                        <div className={styles.heading}>Vehicles charged (all time)</div>
-                        <Row label="Cars" value={count(cars)} />
-                        <Row label="Trucks" value={count(trucks)} />
-                        <Row label="Buses" value={count(buses)} />
-                        <Row label="Exempt (emergency & service)" value={count(exempt)} />
-                    </div>
+                    <div className={styles.note}>Exempt: emergency and city service vehicles ride free. Reset a city's numbers in Options › Toll Plaza.</div>
                     <div className={styles.section}>
                         <div className={styles.heading}>Toll rates</div>
                         <RateRow label="Cars" id="car" cents={carRate} />

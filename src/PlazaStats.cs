@@ -131,6 +131,56 @@ namespace TollPlaza
             MeasuringSince = null;
         }
 
+        /// <summary>Clears this plaza's (or booth's) monthly numbers and its vehicles/min, and those of its booths.</summary>
+        private void ClearCounts()
+        {
+            Month = -1;
+            ThisMonth = new MonthStats();
+            LastMonth = new MonthStats();
+            m_Recent.Clear();
+            foreach (PlazaStats booth in m_Booths.Values)
+            {
+                booth.ClearCounts();
+            }
+        }
+
+        /// <summary>
+        /// Starts the city's toll numbers over (Options > Toll Plaza): every plaza's and booth's months, the city
+        /// totals, the all-time vehicle counts and revenue. Names, lanes and rates stay.
+        /// </summary>
+        public static void ResetCounts()
+        {
+            foreach (PlazaStats plaza in s_Plazas.Values)
+            {
+                plaza.ClearCounts();
+            }
+            City.ClearCounts();
+            City.m_Booths.Clear();
+            TollState.RevenueCents = 0;
+            TollState.Vehicles.Clear();
+        }
+
+        /// <summary>
+        /// Starts the city's toll setup over too: the numbers (ResetCounts), plus every plaza's own rates, name,
+        /// cash/E-Toll lanes and closed booths, and the city's rates and speeds (back to the Options defaults).
+        /// Booths are reopened the way the panel does it, so route finding is told.
+        /// </summary>
+        public static void ResetEverything()
+        {
+            ResetCounts();
+            foreach (PlazaStats plaza in s_Plazas.Values)
+            {
+                plaza.Rates = null;
+                plaza.Name = null;
+                plaza.Cash = null;
+                foreach (PlazaStats booth in plaza.m_Booths.Values)
+                {
+                    booth.Closed = false;
+                }
+            }
+            TollState.Reset();
+        }
+
         public static PlazaStats Of(Entity plaza)
         {
             if (!s_Plazas.TryGetValue(plaza, out PlazaStats stats))

@@ -116,6 +116,10 @@
 - **Options page** (Options > Toll Plaza): purchase prices for the 2, 4 and 6-booth working plazas (3 and 5 halfway between; applied to the next plaza placed), and the toll rates and lane speeds a city starts with when it has no toll data of its own. Reset button. Kept in the game's ModsSettings folder, not the save (`Setting.cs`).
 - **Per-plaza toll rates**: "Rates" in a plaza's info panel opens a small editor in the spot booth details use (so the panel doesn't grow); "Set own rates" gives the plaza its own car/truck/bus rates (starting from the city's), "Use city rates" goes back. The plaza charges and shows its own rates on its rate sign; kept with the toll data.
 
+## Built on dev/next, not tested (2026-10-02, afternoon)
+- **One table for the city totals**: the control panel's "this month vs last" and "Vehicles charged (all time)" sections are now one table: Cars, Trucks, Buses, Exempt, All vehicles and Revenue, with This month, Last month, Change and All time columns.
+- **Reset a city's toll data** (Options > Toll Plaza, while a city is loaded, with a confirmation): "Reset counts and revenue" zeroes every plaza's and booth's months, the city totals, all-time vehicles and revenue (names, lanes and rates stay); "Reset all toll data" also clears plaza rates, names, cash/E-Toll lanes and closed booths, and puts the city's rates and speeds back to the Options defaults. Money already collected stays in the treasury. Save afterwards to keep it.
+
 ## To do
 2. **Preview export broken**: tools/PreviewExport fails loading a texture source (`TextureBaker.LoadDetail`, System.Drawing "Parameter is not valid"), so preview/plaza.html still shows the old short approach.
 3. ~~6-booth plaza broken~~: fixed 2026-09-28 (built from the 5-lane highway, not the 1-lane one).

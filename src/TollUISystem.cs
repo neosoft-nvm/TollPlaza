@@ -22,6 +22,7 @@ namespace TollPlaza
         private ValueBinding<int> m_Plazas;
         private ValueBinding<int> m_BoothLanes;
         private ValueBinding<string> m_Revenue;
+        private ValueBinding<double> m_RevenueCents;
         private ValueBinding<int> m_Cars;
         private ValueBinding<int> m_Trucks;
         private ValueBinding<int> m_Buses;
@@ -66,6 +67,7 @@ namespace TollPlaza
             AddBinding(m_Plazas = new ValueBinding<int>(Group, "plazas", 0));
             AddBinding(m_BoothLanes = new ValueBinding<int>(Group, "boothLanes", 0));
             AddBinding(m_Revenue = new ValueBinding<string>(Group, "revenue", "$0.00"));
+            AddBinding(m_RevenueCents = new ValueBinding<double>(Group, "revenueCents", 0));
             AddBinding(m_Cars = new ValueBinding<int>(Group, "cars", 0));
             AddBinding(m_Trucks = new ValueBinding<int>(Group, "trucks", 0));
             AddBinding(m_Buses = new ValueBinding<int>(Group, "buses", 0));
@@ -120,6 +122,31 @@ namespace TollPlaza
             AddBinding(new TriggerBinding<string, int>(Group, "adjustSpeed", AdjustSpeed));
         }
 
+        /// <summary>Carries out a city reset asked for in Options (Setting), then refreshes the panels.</summary>
+        private void ApplyPendingReset()
+        {
+            Setting.CityReset reset = Setting.PendingReset;
+            if (reset == Setting.CityReset.None)
+            {
+                return;
+            }
+            Setting.PendingReset = Setting.CityReset.None;
+            if (!Game.SceneFlow.GameManager.instance.gameMode.IsGame())
+            {
+                return;
+            }
+            if (reset == Setting.CityReset.Everything)
+            {
+                PlazaStats.ResetEverything();
+            }
+            else
+            {
+                PlazaStats.ResetCounts();
+            }
+            Mod.Log.Info($"[TollPlaza] City toll data reset ({reset}) from Options");
+            m_Frame = 29; // refresh the panel numbers on this update
+        }
+
         private void AdjustSpeed(string lane, int deltaMph)
         {
             int Speed(int mph) => mph < 5 ? 5 : (mph > 70 ? 70 : mph);
@@ -147,6 +174,7 @@ namespace TollPlaza
         protected override void OnUpdate()
         {
             base.OnUpdate();
+            ApplyPendingReset();
             if (++m_Frame % 30 != 0)
             {
                 return;
@@ -156,6 +184,7 @@ namespace TollPlaza
             m_Plazas.Update(plazas);
             m_BoothLanes.Update(lanes);
             m_Revenue.Update("$" + (TollState.RevenueCents / 100.0).ToString("N2"));
+            m_RevenueCents.Update(TollState.RevenueCents);
             m_Cars.Update(Count(VehicleClass.Car));
             m_Trucks.Update(Count(VehicleClass.Truck));
             m_Buses.Update(Count(VehicleClass.Bus));
