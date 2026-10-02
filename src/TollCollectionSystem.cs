@@ -58,11 +58,13 @@ namespace TollPlaza
         /// <summary>Back to a new city's defaults (every city load starts here, then PlazaPersistence restores).</summary>
         public static void Reset()
         {
-            CarRateCents = DefaultCarRateCents;
-            TruckRateCents = DefaultTruckRateCents;
-            BusRateCents = DefaultBusRateCents;
-            CashMph = PlazaLayout.CashSpeedMph;
-            EtcMph = PlazaLayout.EtcSpeedMph;
+            // The starting rates and speeds from Options (Setting), else the built-in defaults.
+            Setting s = Mod.Settings;
+            CarRateCents = s != null ? Setting.Cents(s.CarRate) : DefaultCarRateCents;
+            TruckRateCents = s != null ? Setting.Cents(s.TruckRate) : DefaultTruckRateCents;
+            BusRateCents = s != null ? Setting.Cents(s.BusRate) : DefaultBusRateCents;
+            CashMph = s != null && s.CashMph > 0 ? s.CashMph : PlazaLayout.CashSpeedMph;
+            EtcMph = s != null && s.EtcMph > 0 ? s.EtcMph : PlazaLayout.EtcSpeedMph;
             RevenueCents = 0;
             Vehicles.Clear();
         }
@@ -1026,7 +1028,7 @@ namespace TollPlaza
         private void Charge(Entity vehicle, Entity plaza, int month, ref Pass pass)
         {
             VehicleClass cls = Classify(vehicle);
-            int cents = TollState.RateCents(cls);
+            int cents = PlazaStats.RateCents(plaza, cls);
             TollState.Vehicles[cls] = TollState.Count(cls) + 1;
 
             foreach (PlazaStats monthly in new[] { PlazaStats.Of(plaza), PlazaStats.City })

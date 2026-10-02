@@ -31,6 +31,8 @@ namespace TollPlaza
             AddBinding(new TriggerBinding<int>("tollPlaza", "toggleBoothClosed", ToggleBoothClosed));
             AddBinding(new TriggerBinding<string>("tollPlaza", "renamePlaza", RenamePlaza));
             AddBinding(new TriggerBinding("tollPlaza", "autoNamePlaza", AutoNamePlaza));
+            AddBinding(new TriggerBinding("tollPlaza", "togglePlazaRates", TogglePlazaRates));
+            AddBinding(new TriggerBinding<string, int>("tollPlaza", "adjustPlazaRate", AdjustPlazaRate));
             m_NameSystem = World.GetOrCreateSystemManaged<Game.UI.NameSystem>();
             m_CityConfiguration = World.GetOrCreateSystemManaged<Game.City.CityConfigurationSystem>();
         }
@@ -67,6 +69,37 @@ namespace TollPlaza
                 return;
             }
             PlazaNames.Repick(EntityManager, m_PrefabSystem, m_NameSystem, m_CityConfiguration.cityName, selectedEntity);
+            m_InfoUISystem.RequestUpdate();
+        }
+
+        /// <summary>Switches the plaza between the city's rates and its own (starting from the city's current ones).</summary>
+        private void TogglePlazaRates()
+        {
+            if (m_Layout == null || selectedEntity == Entity.Null)
+            {
+                return;
+            }
+            PlazaStats plaza = PlazaStats.Of(selectedEntity);
+            plaza.Rates = plaza.Rates != null
+                ? null
+                : new[] { TollState.CarRateCents, TollState.TruckRateCents, TollState.BusRateCents };
+            m_InfoUISystem.RequestUpdate();
+        }
+
+        /// <summary>The plaza's own rate +/- buttons ("car" | "truck" | "bus").</summary>
+        private void AdjustPlazaRate(string vehicleClass, int deltaCents)
+        {
+            if (m_Layout == null || selectedEntity == Entity.Null)
+            {
+                return;
+            }
+            PlazaStats plaza = PlazaStats.Of(selectedEntity);
+            if (plaza.Rates == null || plaza.Rates.Length != 3)
+            {
+                return;
+            }
+            int i = vehicleClass == "truck" ? 1 : vehicleClass == "bus" ? 2 : 0;
+            plaza.Rates[i] = PlazaStats.ClampRate(plaza.Rates[i] + deltaCents);
             m_InfoUISystem.RequestUpdate();
         }
 
@@ -153,6 +186,15 @@ namespace TollPlaza
             writer.Write(PlazaNames.IsOutdated(selectedEntity));
             writer.PropertyName("plaza");
             WriteStats(writer, plaza);
+            // The rates this plaza charges (its own, or the city's), as plain numbers: no new typed object.
+            writer.PropertyName("ownRates");
+            writer.Write(PlazaStats.HasOwnRates(selectedEntity));
+            writer.PropertyName("carRate");
+            writer.Write(PlazaStats.RateCents(selectedEntity, VehicleClass.Car));
+            writer.PropertyName("truckRate");
+            writer.Write(PlazaStats.RateCents(selectedEntity, VehicleClass.Truck));
+            writer.PropertyName("busRate");
+            writer.Write(PlazaStats.RateCents(selectedEntity, VehicleClass.Bus));
 
             writer.PropertyName("booths");
             int lanes = m_Layout?.LaneCount ?? 0;

@@ -113,6 +113,9 @@
 ## Built on dev/next, not tested (2026-10-02)
 - **Crash-safe toll data**: each snapshot is written to a `.tmp` file and swapped in, so a crash or power loss mid-save can't leave a half-written file. If a snapshot is damaged anyway, loading skips it and takes the settings from the newest readable one instead of starting from defaults. Leftover `.tmp` files are cleared on the next save. (Idea from the unity-modding skill's safe-loading advice.)
 
+- **Options page** (Options > Toll Plaza): purchase prices for the 2, 4 and 6-booth working plazas (3 and 5 halfway between; applied to the next plaza placed), and the toll rates and lane speeds a city starts with when it has no toll data of its own. Reset button. Kept in the game's ModsSettings folder, not the save (`Setting.cs`).
+- **Per-plaza toll rates**: "Rates" in a plaza's info panel opens a small editor in the spot booth details use (so the panel doesn't grow); "Set own rates" gives the plaza its own car/truck/bus rates (starting from the city's), "Use city rates" goes back. The plaza charges and shows its own rates on its rate sign; kept with the toll data.
+
 ## To do
 2. **Preview export broken**: tools/PreviewExport fails loading a texture source (`TextureBaker.LoadDetail`, System.Drawing "Parameter is not valid"), so preview/plaza.html still shows the old short approach.
 3. ~~6-booth plaza broken~~: fixed 2026-09-28 (built from the 5-lane highway, not the 1-lane one).

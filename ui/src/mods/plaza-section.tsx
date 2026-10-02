@@ -24,7 +24,30 @@ interface PlazaSectionProps {
     outdated: boolean;
     plaza: Stats;
     booths: Booth[];
+    /** True when the plaza charges its own rates instead of the city-wide ones. */
+    ownRates: boolean;
+    /** What the plaza charges now, in cents (its own rates, or the city's). */
+    carRate: number;
+    truckRate: number;
+    busRate: number;
 }
+
+const RATE_STEP_CENTS = 25;
+const usd = (cents: number) => `$${(cents / 100).toFixed(2)}`;
+
+/** One of the plaza's own rates with − and + buttons. */
+const PlazaRateRow = ({ label, id, cents }: { label: string; id: string; cents: number }) => (
+    <div className={styles.row}>
+        <span className={styles.label}>{label}</span>
+        <div className={styles.stepper}>
+            <Button variant="flat" className={styles.step}
+                onSelect={() => trigger("tollPlaza", "adjustPlazaRate", id, -RATE_STEP_CENTS)}>−</Button>
+            <span className={styles.rate}>{usd(cents)}</span>
+            <Button variant="flat" className={styles.step}
+                onSelect={() => trigger("tollPlaza", "adjustPlazaRate", id, RATE_STEP_CENTS)}>+</Button>
+        </div>
+    </div>
+);
 
 /** "12 vehicles/min", or "3 in the first 20 s" while the first minute after loading is still running. */
 const rate = (s: Stats) =>
@@ -84,6 +107,8 @@ const InfoSection: any =
 /** "Toll Plaza" section of the info panel when a plaza is clicked: plaza totals and each booth. */
 const PlazaSection = (props: PlazaSectionProps) => {
     const [booth, setBooth] = useState<number | null>(null);
+    // The rate editor and a booth's details share one spot, so the panel never grows by both (a tall panel crashed the UI once).
+    const [editRates, setEditRates] = useState(false);
     const selected = booth !== null && booth < props.booths.length ? props.booths[booth] : null;
 
     return (
@@ -99,6 +124,13 @@ const PlazaSection = (props: PlazaSectionProps) => {
             <div className={styles.section}>
                 <div className={styles.heading}>Whole plaza</div>
                 <RateRow stats={props.plaza} />
+                <div className={styles.row}>
+                    <span className={styles.label}>{`Tolls (${props.ownRates ? "this plaza" : "city"}): ${usd(props.carRate)} / ${usd(props.truckRate)} / ${usd(props.busRate)}`}</span>
+                    <Button variant="flat" className={styles.switch}
+                        onSelect={() => { setBooth(null); setEditRates(!editRates); }}>
+                        {editRates ? "Done" : "Rates"}
+                    </Button>
+                </div>
                 <MonthCompare stats={props.plaza} />
             </div>
             <div className={styles.section}>
@@ -107,7 +139,7 @@ const PlazaSection = (props: PlazaSectionProps) => {
                     {props.booths.map((b, i) => (
                         <Button key={i} variant="flat"
                             className={`${styles.booth} ${b.closed ? styles.closed : b.cash ? styles.cash : styles.etc} ${booth === i ? styles.boothSelected : ""}`}
-                            onSelect={() => setBooth(booth === i ? null : i)}>
+                            onSelect={() => { setEditRates(false); setBooth(booth === i ? null : i); }}>
                             {/* Stacked in a div of its own: the game's Button lays its children out in a row. */}
                             <div className={styles.boothStack}>
                                 <div>{`${i + 1}`}</div>
@@ -119,6 +151,26 @@ const PlazaSection = (props: PlazaSectionProps) => {
                     ))}
                 </div>
             </div>
+            {editRates && (
+                <div className={styles.section}>
+                    <div className={styles.row}>
+                        <span className={styles.heading}>{props.ownRates ? "This plaza's own rates" : "Using the city's rates"}</span>
+                        <Button variant="flat" className={styles.switch}
+                            onSelect={() => trigger("tollPlaza", "togglePlazaRates")}>
+                            {props.ownRates ? "Use city rates" : "Set own rates"}
+                        </Button>
+                    </div>
+                    {props.ownRates ? (
+                        <>
+                            <PlazaRateRow label="Cars" id="car" cents={props.carRate} />
+                            <PlazaRateRow label="Trucks" id="truck" cents={props.truckRate} />
+                            <PlazaRateRow label="Buses" id="bus" cents={props.busRate} />
+                        </>
+                    ) : (
+                        <div className={styles.note}>Change the city-wide rates in the Toll Plaza panel, or set this plaza's own.</div>
+                    )}
+                </div>
+            )}
             {selected && booth !== null && (
                 <div className={styles.section}>
                     <div className={styles.row}>

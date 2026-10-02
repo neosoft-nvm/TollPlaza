@@ -98,6 +98,8 @@ namespace TollPlaza
             /// <summary>Booth lanes closed by the player (0-based), or null.</summary>
             public int[] Closed;
             public string Name;
+            /// <summary>The plaza's own car, truck and bus rates in cents, or null for the city's.</summary>
+            public int[] Rates;
             public StatsDto Stats;
             public Dictionary<int, StatsDto> Booths = new Dictionary<int, StatsDto>();
         }
@@ -181,6 +183,7 @@ namespace TollPlaza
                     Cash = entry.Value.Cash,
                     Closed = entry.Value.Booths.Where(b => b.Value.Closed).Select(b => b.Key).OrderBy(b => b).ToArray(),
                     Name = entry.Value.Name,
+                    Rates = entry.Value.Rates,
                     Stats = StatsDto.From(entry.Value),
                 };
                 foreach (var booth in entry.Value.Booths)
@@ -356,6 +359,8 @@ namespace TollPlaza
                 PlazaStats stats = PlazaStats.Of(found.entity);
                 stats.Cash = dto.Cash;
                 stats.Name = dto.Name;
+                // The plaza's own rates are a setting too; a damaged entry falls back to the city's rates.
+                stats.Rates = dto.Rates != null && dto.Rates.Length == 3 ? dto.Rates.Select(PlazaStats.ClampRate).ToArray() : null;
                 // Closed booths are a setting, like cash lanes: kept even from a snapshot of another save. The last
                 // booth always stays open (as in the info panel), so a bad file can't shut the plaza.
                 int[] closed = (dto.Closed ?? new int[0]).Where(l => l >= 0).Distinct().ToArray();

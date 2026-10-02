@@ -22,6 +22,9 @@ namespace TollPlaza
         /// <summary>A plainer icon for the decorative plazas, so they don't look like working ones in the menu.</summary>
         public static string DecorativeIconUri => "coui://" + UiHost + "/" + DecorativeIconFile;
 
+        /// <summary>The Options page (prices, new-city defaults); null if it couldn't be set up.</summary>
+        public static Setting Settings { get; private set; }
+
         public void OnLoad(UpdateSystem updateSystem)
         {
             Log.Info("[TollPlaza] OnLoad " + typeof(Mod).Assembly.GetName().Version);
@@ -33,6 +36,19 @@ namespace TollPlaza
             catch (Exception e)
             {
                 Log.Error(e, "[TollPlaza] RegisterIcon failed");
+            }
+
+            try
+            {
+                Settings = new Setting(this);
+                Settings.RegisterInOptionsUI();
+                GameManager.instance.localizationManager.AddSource("en-US", new SettingLocale(Settings));
+                AssetDatabase.global.LoadSettings(nameof(TollPlaza), Settings, new Setting(this));
+                Settings.onSettingsApplied += _ => PlazaAssetSystem.PricesChanged = true;
+            }
+            catch (Exception e)
+            {
+                Log.Error(e, "[TollPlaza] Options settings failed; using the defaults");
             }
 
             try
@@ -96,6 +112,8 @@ namespace TollPlaza
         public void OnDispose()
         {
             Log.Info("[TollPlaza] OnDispose");
+            Settings?.UnregisterInOptionsUI();
+            Settings = null;
         }
 
         // Front view of a plaza: green TOLL sign over the canopy with navy stripe, booths on islands; two lanes
