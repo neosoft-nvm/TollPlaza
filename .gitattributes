@@ -1,0 +1,2 @@
+# Normalize line endings to LF in the repo; Git converts to the platform style on checkout
+* text=auto
