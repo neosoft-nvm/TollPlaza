@@ -122,6 +122,11 @@
 
 - **Wrong-way roads at a plaza end** (screenshot 2026-10-02 09:44): when a plaza snaps onto a road end the game lines it up with the road but ignores its traffic direction, so a one-way highway drawn away from that point met the plaza head-on and both dead-ended. `PlazaDirectionSystem` checks each plaza's two ends every half second and reverses a wrong-way one-way road there (and the pieces continuing it) the way the road tool's replace mode does, as long as that stretch ends loose. If it reaches a junction or another building's road, the plaza preview turns red with the warning icon instead (`PlazaConnectionGuardSystem`), since reversing could break the network.
 
+## Test results (2026-10-06, dev/next build)
+- Passed in game: city totals table, Options reset buttons, and the rest of the checklist (plaza still collects, signs and gates work, no crash opening the info panel).
+- Wrong-way one-way road at a plaza end: crashed once (9:12) when a plaza was placed at the end of a one-way road running the other way. Not reproduced in about a dozen later tries. Log at 9:12:50 shows the junction case ("left as it is") and the roof sign drawn just before the crash. Cause not found. Other road mods loaded at the time: RoadBuilder, RoadRule, Traffic, TollRoadsCS2VanillaCore.
+- Two other crash dumps (9:20 and 9:24) are unexplained; the tester saw no crash then.
+
 ## Release status (2026-10-06)
 - Not ready to release yet. `main` (`d215772`) is the tested state; `dev/next` has 3 commits (city totals table, reset buttons, wrong-way road reversal) that still need in-game testing before merging.
 - Publish metadata in `src/Properties/PublishConfiguration.xml` is still placeholder: changelog, ModId, thumbnail and screenshot are empty. Version is 0.1.0.
