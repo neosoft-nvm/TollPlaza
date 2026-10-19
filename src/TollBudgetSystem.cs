@@ -74,8 +74,7 @@ namespace TollPlaza
         /// </summary>
         public int MonthlyTolls()
         {
-            System.DateTime date = m_TimeSystem.GetCurrentDateTime();
-            PlazaStats.City.Roll(date.Year * 12 + date.Month);
+            PlazaStats.City.Roll(PlazaStats.MonthKey(m_TimeSystem));
             long cents = PlazaStats.City.LastMonth.Cents > 0 ? PlazaStats.City.LastMonth.Cents : PlazaStats.City.ThisMonth.Cents;
             return (int)(cents / 100);
         }

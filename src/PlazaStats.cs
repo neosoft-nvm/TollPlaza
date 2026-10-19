@@ -99,7 +99,17 @@ namespace TollPlaza
             }
         }
 
-        /// <summary>Starts a new month when the game date moves on (month key = year * 12 + month).</summary>
+        /// <summary>
+        /// The game's current "month" as a counter that goes up by one each period. The game's year is only
+        /// daysPerYear (12) days long, so its DateTime is always in January: the period is the game day.
+        /// </summary>
+        public static int MonthKey(Game.Simulation.TimeSystem time)
+        {
+            System.DateTime date = time.GetCurrentDateTime();
+            return date.Year * time.daysPerYear + date.DayOfYear;
+        }
+
+        /// <summary>Starts a new month when the game date moves on (month key = MonthKey).</summary>
         public void Roll(int month)
         {
             if (month == Month)

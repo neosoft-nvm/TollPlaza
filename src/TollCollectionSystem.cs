@@ -240,8 +240,7 @@ namespace TollPlaza
             // The lanes' own vehicle lists missed fast cars, so they're not used.
             if (m_PlazaLanes.Count > 0)
             {
-                System.DateTime date = m_TimeSystem.GetCurrentDateTime();
-                int month = date.Year * 12 + date.Month;
+                int month = PlazaStats.MonthKey(m_TimeSystem);
                 using (NativeArray<Entity> vehicles = m_CarQuery.ToEntityArray(Allocator.Temp))
                 using (NativeArray<Game.Vehicles.CarCurrentLane> current = m_CarQuery.ToComponentDataArray<Game.Vehicles.CarCurrentLane>(Allocator.Temp))
                 {

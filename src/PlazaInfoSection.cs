@@ -167,11 +167,7 @@ namespace TollPlaza
         {
         }
 
-        private int CurrentMonth()
-        {
-            System.DateTime date = m_TimeSystem.GetCurrentDateTime();
-            return date.Year * 12 + date.Month;
-        }
+        private int CurrentMonth() => PlazaStats.MonthKey(m_TimeSystem);
 
         public override void OnWriteProperties(IJsonWriter writer)
         {

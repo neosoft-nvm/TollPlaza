@@ -195,8 +195,7 @@ namespace TollPlaza
             m_BusRate.Update(TollState.BusRateCents);
             m_CashMph.Update(TollState.CashMph);
             m_EtcMph.Update(TollState.EtcMph);
-            System.DateTime date = World.GetOrCreateSystemManaged<Game.Simulation.TimeSystem>().GetCurrentDateTime();
-            PlazaStats.City.Roll(date.Year * 12 + date.Month);
+            PlazaStats.City.Roll(PlazaStats.MonthKey(World.GetOrCreateSystemManaged<Game.Simulation.TimeSystem>()));
             m_Months.Update();
             m_PlazaList.Update();
         }
