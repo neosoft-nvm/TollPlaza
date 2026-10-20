@@ -39,42 +39,12 @@ namespace TollPlaza
         private PrefabSystem m_PrefabSystem;
         private EntityQuery m_Plazas;
         private readonly HashSet<Entity> m_LoggedBlocked = new HashSet<Entity>();
-        private readonly Dictionary<(Entity plaza, Entity node), string> m_LastState = new Dictionary<(Entity, Entity), string>();
         private readonly Dictionary<(Entity node, Entity road), int> m_Joined = new Dictionary<(Entity, Entity), int>();
         private const int ClearChecks = 4;
         private IconCommandSystem m_IconCommandSystem;
         private EntityQuery m_TrafficConfig;
         private bool m_Primed;
         private int m_Frame;
-
-        /// <summary>Diagnostic text for the log: what is joined at a plaza end and which way each piece flows.</summary>
-        private static string Describe(EntityManager em, Entity node, bool plazaFlowsOut)
-        {
-            var text = new System.Text.StringBuilder(plazaFlowsOut ? "entry" : "exit");
-            if (node == Entity.Null || !em.HasBuffer<ConnectedEdge>(node))
-            {
-                return text.Append(", no node").ToString();
-            }
-            foreach (ConnectedEdge connected in em.GetBuffer<ConnectedEdge>(node, true))
-            {
-                Entity edge = connected.m_Edge;
-                bool live = IsLive(em, edge);
-                text.Append($"; {edge}");
-                text.Append(em.HasComponent<Owner>(edge) ? " owned" : " player");
-                text.Append(live ? "" : " not-live");
-                if (live)
-                {
-                    int flow = Flow(em, edge);
-                    text.Append(flow == 0 ? " flow 0" : $" flow {flow} into-end {FlowsInto(em, edge, flow, node)}");
-                    text.Append($" lanes {(em.HasBuffer<SubLane>(edge) ? em.GetBuffer<SubLane>(edge, true).Length : -1)}");
-                    if (flow == 0)
-                    {
-                        text.Append(" [" + LaneStats(em, edge) + "]");
-                    }
-                }
-            }
-            return text.ToString();
-        }
 
         protected override void OnCreate()
         {
@@ -108,12 +78,6 @@ namespace TollPlaza
                     foreach ((Entity node, bool plazaFlowsOut) in Ends(EntityManager, plaza))
                     {
                         Result result = Check(EntityManager, node, plazaFlowsOut, out List<Entity> chain);
-                        string state = Describe(EntityManager, node, plazaFlowsOut) + " -> " + result;
-                        if (!m_LastState.TryGetValue((plaza, node), out string last) || last != state)
-                        {
-                            m_LastState[(plaza, node)] = state;
-                            Mod.Log.Info($"[TollPlaza] Direction check, plaza {plaza} end {node}: {state}");
-                        }
                         if (result == Result.Fine)
                         {
                             ClearDeadEndIcons(node);
@@ -141,7 +105,6 @@ namespace TollPlaza
             base.OnGameLoadingComplete(purpose, mode);
             m_Primed = false;
             m_Joined.Clear();
-            m_LastState.Clear();
             m_LoggedBlocked.Clear();
         }
 
@@ -311,41 +274,6 @@ namespace TollPlaza
         /// </summary>
         private static bool RunsForward(Bezier4x3 lane, Bezier4x3 road) =>
             math.dot(lane.d - lane.a, road.d - road.a) >= 0f;
-
-        /// <summary>Diagnostic: why Flow gave 0. Car lanes split by direction, two-way ones, and the lane flags seen.</summary>
-        private static string LaneStats(EntityManager em, Entity edge)
-        {
-            if (!em.HasBuffer<SubLane>(edge) || !em.HasComponent<Curve>(edge))
-            {
-                return "no lanes or curve";
-            }
-            Bezier4x3 road = em.GetComponentData<Curve>(edge).m_Bezier;
-            int forward = 0, backward = 0, twoway = 0, car = 0, noCurve = 0;
-            Game.Net.CarLaneFlags seen = 0;
-            foreach (SubLane sub in em.GetBuffer<SubLane>(edge, true))
-            {
-                Entity lane = sub.m_SubLane;
-                if (!em.HasComponent<Game.Net.CarLane>(lane))
-                {
-                    continue;
-                }
-                car++;
-                Game.Net.CarLaneFlags flags = em.GetComponentData<Game.Net.CarLane>(lane).m_Flags;
-                seen |= flags;
-                if (!em.HasComponent<Curve>(lane))
-                {
-                    noCurve++;
-                    continue;
-                }
-                if ((flags & Game.Net.CarLaneFlags.Twoway) != 0)
-                {
-                    twoway++;
-                    continue;
-                }
-                if (RunsForward(em.GetComponentData<Curve>(lane).m_Bezier, road)) forward++; else backward++;
-            }
-            return $"car {car} fwd {forward} bwd {backward} twoway {twoway} nocurve {noCurve} flags {seen}";
-        }
 
         private static bool IsLive(EntityManager em, Entity edge) =>
             em.HasComponent<Edge>(edge) && !em.HasComponent<Deleted>(edge) && !em.HasComponent<Game.Tools.Temp>(edge);
