@@ -2,7 +2,15 @@
 	<ModId Value="" />
 	<DisplayName Value="Toll Plaza" />
 	<ShortDescription Value="American-style highway toll plazas: booths, canopy and slowing traffic that pays a toll." />
-	<LongDescription>Toll Plaza adds a highway toll plaza with booth lanes and an overhead canopy. Vehicles slow down to pay a toll that goes to the city treasury.</LongDescription>
+	<LongDescription>Toll Plaza adds American-style highway toll plazas to Cities: Skylines II. Pick a plaza with 2 to 6 booths from the Road Services menu and drop it on a highway. Vehicles slow through the booths and pay a toll that goes straight to the city treasury, with a Toll Plazas line in the budget screen.
+
+- Cash and E-Toll lanes, with closable booths and animated gate arms
+- Live roof, toll-rate and speed signs that follow your settings
+- A control panel with city totals (this month, last month, all time) and a plaza panel for per-plaza rates
+- An Options page for plaza prices and the rates a new city starts with, plus buttons to reset a city's toll data
+- Toll data is stored outside the save file and written crash-safe
+
+Joining a plaza to a one-way road that runs the wrong way flips that road to match, when it ends loose. If it reaches a junction, the placement preview turns red and you'll need to flip that road yourself first.</LongDescription>
 	<Thumbnail Value="" />
 	<Screenshot Value="" />
 	<Tag Value="Code Mod" />
