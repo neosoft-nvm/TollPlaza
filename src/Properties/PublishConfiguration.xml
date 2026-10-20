@@ -9,5 +9,5 @@
 	<ModVersion Value="0.1.0" />
 	<GameVersion Value="1.*" />
 	<Dependency Id="" />
-	<ChangeLog Value="Work in progress." />
+	<ChangeLog Value="0.1.0 - First release. Toll plazas with 2 to 6 booths and a canopy; vehicles slow down and pay a toll that goes to the city treasury. Control panel with city totals (this month, last month, all time), plaza info panel with per-plaza rates, live toll and speed signs, animated gate arms, cash and E-Toll lanes, closable booths. Options page for plaza prices and starting toll rates, with buttons to reset a city's toll data. Toll data is kept outside the save file and written crash-safe." />
 </Publish>
