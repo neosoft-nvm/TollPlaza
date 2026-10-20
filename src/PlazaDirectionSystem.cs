@@ -37,7 +37,33 @@ namespace TollPlaza
         private PrefabSystem m_PrefabSystem;
         private EntityQuery m_Plazas;
         private readonly HashSet<Entity> m_LoggedBlocked = new HashSet<Entity>();
+        private readonly Dictionary<Entity, string> m_LastState = new Dictionary<Entity, string>();
         private int m_Frame;
+
+        /// <summary>Diagnostic text for the log: what is joined at a plaza end and which way each piece flows.</summary>
+        private static string Describe(EntityManager em, Entity node, bool plazaFlowsOut)
+        {
+            var text = new System.Text.StringBuilder(plazaFlowsOut ? "entry" : "exit");
+            if (node == Entity.Null || !em.HasBuffer<ConnectedEdge>(node))
+            {
+                return text.Append(", no node").ToString();
+            }
+            foreach (ConnectedEdge connected in em.GetBuffer<ConnectedEdge>(node, true))
+            {
+                Entity edge = connected.m_Edge;
+                bool live = IsLive(em, edge);
+                text.Append($"; {edge}");
+                text.Append(em.HasComponent<Owner>(edge) ? " owned" : " player");
+                text.Append(live ? "" : " not-live");
+                if (live)
+                {
+                    int flow = Flow(em, edge);
+                    text.Append(flow == 0 ? " flow 0" : $" flow {flow} into-end {FlowsInto(em, edge, flow, node)}");
+                    text.Append($" lanes {(em.HasBuffer<SubLane>(edge) ? em.GetBuffer<SubLane>(edge, true).Length : -1)}");
+                }
+            }
+            return text.ToString();
+        }
 
         protected override void OnCreate()
         {
@@ -69,6 +95,12 @@ namespace TollPlaza
                     foreach ((Entity node, bool plazaFlowsOut) in Ends(EntityManager, plaza))
                     {
                         Result result = Check(EntityManager, node, plazaFlowsOut, out List<Entity> chain);
+                        string state = Describe(EntityManager, node, plazaFlowsOut) + " -> " + result;
+                        if (!m_LastState.TryGetValue(node, out string last) || last != state)
+                        {
+                            m_LastState[node] = state;
+                            Mod.Log.Info($"[TollPlaza] Direction check, plaza {plaza} end {node}: {state}");
+                        }
                         if (result == Result.Reversible)
                         {
                             foreach (Entity edge in chain)
