@@ -233,6 +233,14 @@ namespace TollPlaza
             return Result.Blocked;
         }
 
+        /// <summary>
+        /// Whether a lane runs the same way as its road piece. Compares the lane's overall direction with the piece's,
+        /// not where the lane starts: a lane split into shorter pieces can start nearer the piece's far end, which
+        /// made a one-way road read as half forward and half backward (no direction) and the wrong-way fix skip it.
+        /// </summary>
+        private static bool RunsForward(Bezier4x3 lane, Bezier4x3 road) =>
+            math.dot(lane.d - lane.a, road.d - road.a) >= 0f;
+
         /// <summary>Diagnostic: why Flow gave 0. Car lanes split by direction, two-way ones, and the lane flags seen.</summary>
         private static string LaneStats(EntityManager em, Entity edge)
         {
@@ -263,8 +271,7 @@ namespace TollPlaza
                     twoway++;
                     continue;
                 }
-                float3 start = em.GetComponentData<Curve>(lane).m_Bezier.a;
-                if (math.distancesq(start, road.a) < math.distancesq(start, road.d)) forward++; else backward++;
+                if (RunsForward(em.GetComponentData<Curve>(lane).m_Bezier, road)) forward++; else backward++;
             }
             return $"car {car} fwd {forward} bwd {backward} twoway {twoway} nocurve {noCurve} flags {seen}";
         }
@@ -298,8 +305,7 @@ namespace TollPlaza
                 {
                     return 0;
                 }
-                float3 start = em.GetComponentData<Curve>(lane).m_Bezier.a;
-                if (math.distancesq(start, road.a) < math.distancesq(start, road.d))
+                if (RunsForward(em.GetComponentData<Curve>(lane).m_Bezier, road))
                 {
                     forward++;
                 }
