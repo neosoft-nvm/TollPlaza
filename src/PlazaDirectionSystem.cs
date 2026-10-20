@@ -4,6 +4,7 @@ using Colossal.Serialization.Entities;
 using Game;
 using Game.Common;
 using Game.Net;
+using Game.Notifications;
 using Game.Prefabs;
 using RoadFlags = Game.Net.RoadFlags;
 using SubLane = Game.Net.SubLane;
@@ -39,7 +40,10 @@ namespace TollPlaza
         private EntityQuery m_Plazas;
         private readonly HashSet<Entity> m_LoggedBlocked = new HashSet<Entity>();
         private readonly Dictionary<(Entity plaza, Entity node), string> m_LastState = new Dictionary<(Entity, Entity), string>();
-        private readonly HashSet<(Entity node, Entity road)> m_Joined = new HashSet<(Entity, Entity)>();
+        private readonly Dictionary<(Entity node, Entity road), int> m_Joined = new Dictionary<(Entity, Entity), int>();
+        private const int ClearChecks = 4;
+        private IconCommandSystem m_IconCommandSystem;
+        private EntityQuery m_TrafficConfig;
         private bool m_Primed;
         private int m_Frame;
 
@@ -76,6 +80,8 @@ namespace TollPlaza
         {
             base.OnCreate();
             m_PrefabSystem = World.GetOrCreateSystemManaged<PrefabSystem>();
+            m_IconCommandSystem = World.GetOrCreateSystemManaged<IconCommandSystem>();
+            m_TrafficConfig = GetEntityQuery(ComponentType.ReadOnly<TrafficConfigurationData>());
             m_Plazas = GetEntityQuery(
                 ComponentType.ReadOnly<Game.Objects.Object>(),
                 ComponentType.ReadOnly<PrefabRef>(),
@@ -110,7 +116,7 @@ namespace TollPlaza
                         }
                         if (result == Result.Fine)
                         {
-                            RefreshNewJoins(node);
+                            ClearDeadEndIcons(node);
                         }
                         if (result == Result.Reversible)
                         {
@@ -140,45 +146,51 @@ namespace TollPlaza
         }
 
         /// <summary>
-        /// A road newly joined to a plaza end is marked updated, together with its node and the plaza's own piece, so
-        /// the game rebuilds their lanes and connections. Without this a road that already flows the right way can be
-        /// left with the dead-end icon at the joint until the player reverses it and back by hand. Roads already joined
-        /// when the city loaded are only noted, not touched.
+        /// A road newly joined to a plaza end is cleared of the game's "Dead end" notification. That icon sits on the
+        /// road's end lane from when the road stopped loose; the game only removes it when it re-checks the road, and
+        /// the joint never triggers that, so it stayed until the player reversed the road and back by hand (which
+        /// rebuilds the lanes and drops their icons). The clearing is repeated for a few checks in case the game
+        /// re-adds it. Roads already joined when the city loaded are only noted, not touched.
         /// </summary>
-        private void RefreshNewJoins(Entity node)
+        private void ClearDeadEndIcons(Entity node)
         {
             if (node == Entity.Null || !EntityManager.HasBuffer<ConnectedEdge>(node))
             {
                 return;
             }
-            var touch = new List<Entity>();
-            bool fresh = false;
             foreach (ConnectedEdge connected in EntityManager.GetBuffer<ConnectedEdge>(node, true))
             {
                 Entity edge = connected.m_Edge;
-                if (!IsLive(EntityManager, edge))
+                if (!IsLive(EntityManager, edge) || EntityManager.HasComponent<Owner>(edge) || !EntityManager.HasBuffer<SubLane>(edge))
                 {
                     continue;
                 }
-                touch.Add(edge);
-                if (!EntityManager.HasComponent<Owner>(edge) && m_Joined.Add((node, edge)) && m_Primed)
+                if (!m_Joined.TryGetValue((node, edge), out int left))
                 {
-                    fresh = true;
+                    left = m_Primed ? ClearChecks : 0;
+                }
+                if (left <= 0)
+                {
+                    m_Joined[(node, edge)] = 0;
+                    continue;
+                }
+                m_Joined[(node, edge)] = left - 1;
+                if (m_TrafficConfig.IsEmptyIgnoreFilter)
+                {
+                    continue;
+                }
+                Entity deadEnd = m_TrafficConfig.GetSingleton<TrafficConfigurationData>().m_DeadEndNotification;
+                IconCommandBuffer icons = m_IconCommandSystem.CreateCommandBuffer();
+                foreach (SubLane sub in EntityManager.GetBuffer<SubLane>(edge, true))
+                {
+                    icons.Remove(sub.m_SubLane, deadEnd, Entity.Null);
+                    icons.Remove(sub.m_SubLane, deadEnd, Entity.Null, Game.Notifications.IconFlags.SecondaryLocation);
+                }
+                if (left == ClearChecks)
+                {
+                    Mod.Log.Info($"[TollPlaza] Cleared dead-end icons from road piece {edge} newly joined at plaza end {node}");
                 }
             }
-            if (!fresh)
-            {
-                return;
-            }
-            touch.Add(node);
-            foreach (Entity entity in touch)
-            {
-                if (!EntityManager.HasComponent<Updated>(entity))
-                {
-                    EntityManager.AddComponent<Updated>(entity);
-                }
-            }
-            Mod.Log.Info($"[TollPlaza] Refreshed {touch.Count - 1} road piece(s) newly joined at plaza end {node} so their lanes rebuild");
         }
 
         /// <summary>
