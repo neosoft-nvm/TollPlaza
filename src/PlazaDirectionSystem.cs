@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using Colossal.Mathematics;
+using Colossal.Serialization.Entities;
 using Game;
 using Game.Common;
 using Game.Net;
@@ -37,7 +38,9 @@ namespace TollPlaza
         private PrefabSystem m_PrefabSystem;
         private EntityQuery m_Plazas;
         private readonly HashSet<Entity> m_LoggedBlocked = new HashSet<Entity>();
-        private readonly Dictionary<Entity, string> m_LastState = new Dictionary<Entity, string>();
+        private readonly Dictionary<(Entity plaza, Entity node), string> m_LastState = new Dictionary<(Entity, Entity), string>();
+        private readonly HashSet<(Entity node, Entity road)> m_Joined = new HashSet<(Entity, Entity)>();
+        private bool m_Primed;
         private int m_Frame;
 
         /// <summary>Diagnostic text for the log: what is joined at a plaza end and which way each piece flows.</summary>
@@ -100,10 +103,14 @@ namespace TollPlaza
                     {
                         Result result = Check(EntityManager, node, plazaFlowsOut, out List<Entity> chain);
                         string state = Describe(EntityManager, node, plazaFlowsOut) + " -> " + result;
-                        if (!m_LastState.TryGetValue(node, out string last) || last != state)
+                        if (!m_LastState.TryGetValue((plaza, node), out string last) || last != state)
                         {
-                            m_LastState[node] = state;
+                            m_LastState[(plaza, node)] = state;
                             Mod.Log.Info($"[TollPlaza] Direction check, plaza {plaza} end {node}: {state}");
+                        }
+                        if (result == Result.Fine)
+                        {
+                            RefreshNewJoins(node);
                         }
                         if (result == Result.Reversible)
                         {
@@ -120,6 +127,58 @@ namespace TollPlaza
                     }
                 }
             }
+            m_Primed = true;
+        }
+
+        protected override void OnGameLoadingComplete(Purpose purpose, GameMode mode)
+        {
+            base.OnGameLoadingComplete(purpose, mode);
+            m_Primed = false;
+            m_Joined.Clear();
+            m_LastState.Clear();
+            m_LoggedBlocked.Clear();
+        }
+
+        /// <summary>
+        /// A road newly joined to a plaza end is marked updated, together with its node and the plaza's own piece, so
+        /// the game rebuilds their lanes and connections. Without this a road that already flows the right way can be
+        /// left with the dead-end icon at the joint until the player reverses it and back by hand. Roads already joined
+        /// when the city loaded are only noted, not touched.
+        /// </summary>
+        private void RefreshNewJoins(Entity node)
+        {
+            if (node == Entity.Null || !EntityManager.HasBuffer<ConnectedEdge>(node))
+            {
+                return;
+            }
+            var touch = new List<Entity>();
+            bool fresh = false;
+            foreach (ConnectedEdge connected in EntityManager.GetBuffer<ConnectedEdge>(node, true))
+            {
+                Entity edge = connected.m_Edge;
+                if (!IsLive(EntityManager, edge))
+                {
+                    continue;
+                }
+                touch.Add(edge);
+                if (!EntityManager.HasComponent<Owner>(edge) && m_Joined.Add((node, edge)) && m_Primed)
+                {
+                    fresh = true;
+                }
+            }
+            if (!fresh)
+            {
+                return;
+            }
+            touch.Add(node);
+            foreach (Entity entity in touch)
+            {
+                if (!EntityManager.HasComponent<Updated>(entity))
+                {
+                    EntityManager.AddComponent<Updated>(entity);
+                }
+            }
+            Mod.Log.Info($"[TollPlaza] Refreshed {touch.Count - 1} road piece(s) newly joined at plaza end {node} so their lanes rebuild");
         }
 
         /// <summary>
