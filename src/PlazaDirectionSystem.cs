@@ -60,6 +60,10 @@ namespace TollPlaza
                     int flow = Flow(em, edge);
                     text.Append(flow == 0 ? " flow 0" : $" flow {flow} into-end {FlowsInto(em, edge, flow, node)}");
                     text.Append($" lanes {(em.HasBuffer<SubLane>(edge) ? em.GetBuffer<SubLane>(edge, true).Length : -1)}");
+                    if (flow == 0)
+                    {
+                        text.Append(" [" + LaneStats(em, edge) + "]");
+                    }
                 }
             }
             return text.ToString();
@@ -227,6 +231,42 @@ namespace TollPlaza
                 at = far;
             }
             return Result.Blocked;
+        }
+
+        /// <summary>Diagnostic: why Flow gave 0. Car lanes split by direction, two-way ones, and the lane flags seen.</summary>
+        private static string LaneStats(EntityManager em, Entity edge)
+        {
+            if (!em.HasBuffer<SubLane>(edge) || !em.HasComponent<Curve>(edge))
+            {
+                return "no lanes or curve";
+            }
+            Bezier4x3 road = em.GetComponentData<Curve>(edge).m_Bezier;
+            int forward = 0, backward = 0, twoway = 0, car = 0, noCurve = 0;
+            Game.Net.CarLaneFlags seen = 0;
+            foreach (SubLane sub in em.GetBuffer<SubLane>(edge, true))
+            {
+                Entity lane = sub.m_SubLane;
+                if (!em.HasComponent<Game.Net.CarLane>(lane))
+                {
+                    continue;
+                }
+                car++;
+                Game.Net.CarLaneFlags flags = em.GetComponentData<Game.Net.CarLane>(lane).m_Flags;
+                seen |= flags;
+                if (!em.HasComponent<Curve>(lane))
+                {
+                    noCurve++;
+                    continue;
+                }
+                if ((flags & Game.Net.CarLaneFlags.Twoway) != 0)
+                {
+                    twoway++;
+                    continue;
+                }
+                float3 start = em.GetComponentData<Curve>(lane).m_Bezier.a;
+                if (math.distancesq(start, road.a) < math.distancesq(start, road.d)) forward++; else backward++;
+            }
+            return $"car {car} fwd {forward} bwd {backward} twoway {twoway} nocurve {noCurve} flags {seen}";
         }
 
         private static bool IsLive(EntityManager em, Entity edge) =>
