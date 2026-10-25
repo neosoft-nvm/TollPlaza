@@ -11,8 +11,11 @@
 - Toll data is stored outside the save file and written crash-safe
 
 Joining a plaza to a one-way road that runs the wrong way flips that road to match, when it ends loose. If it reaches a junction, the placement preview turns red and you'll need to flip that road yourself first.</LongDescription>
-	<Thumbnail Value="" />
-	<Screenshot Value="" />
+	<Thumbnail Value="../screenshots/release/thumbnail.png" />
+	<Screenshot Value="../screenshots/release/02-overview.png" />
+	<Screenshot Value="../screenshots/release/01-canopy.png" />
+	<Screenshot Value="../screenshots/release/03-booths.png" />
+	<Screenshot Value="../screenshots/release/04-interior.png" />
 	<Tag Value="Code Mod" />
 	<ModVersion Value="0.1.0" />
 	<GameVersion Value="1.*" />
