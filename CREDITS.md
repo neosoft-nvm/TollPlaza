@@ -9,3 +9,9 @@ Toll Plaza is its own code, but it learned a lot from other Cities: Skylines II 
 - The **CS2 modding Discord** community, whose shared answers show up in all of the above.
 
 No code was copied from these projects. Only the ideas were used.
+
+## Textures
+
+The concrete, metal and painted-metal textures in `textures/src` come from [ambientCG](https://ambientcg.com) (Concrete034, Metal027, PaintedMetal004), released under the CC0 license.
+
+The typings in `ui/types` and the webpack setup in `ui/` come from the CS2 UI modding template. React and the other npm dependencies keep their own licenses.
